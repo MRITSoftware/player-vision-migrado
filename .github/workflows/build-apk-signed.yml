@@ -1,0 +1,179 @@
+name: Build Signed APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Version Code (increment for each build)'
+        required: true
+        default: '1'
+      version_name:
+        description: 'Version Name (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+  release:
+    types: [created]
+
+jobs:
+  build-signed-apk:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    - name: Install PWA Builder CLI
+      run: npm install -g @pwabuilder/cli
+    
+    - name: Generate APK from URL
+      env:
+        PWA_URL: ${{ secrets.PWA_URL || 'https://meuplayer.com.br' }}
+        VERSION_CODE: ${{ github.event.inputs.version_code || '1' }}
+        VERSION_NAME: ${{ github.event.inputs.version_name || github.event.release.tag_name || '1.0.0' }}
+      run: |
+        echo "🔗 Gerando APK a partir da URL: $PWA_URL"
+        echo "📦 Versão: $VERSION_NAME (Code: $VERSION_CODE)"
+        
+        # Gerar projeto Android usando PWA Builder
+        pwabuilder android \
+          --url "$PWA_URL" \
+          --package com.mritsoftware.player \
+          --name "MRIT Player" \
+          --short-name "MRIT" \
+          --display standalone \
+          --orientation any \
+          --theme-color "#000000" \
+          --background-color "#000000" \
+          --skipPwaValidation || exit 1
+    
+    - name: Update version in Android project
+      run: |
+        # Encontrar o diretório do projeto Android
+        ANDROID_DIR=$(find . -name "build.gradle" -path "*/app/*" | head -1 | xargs dirname)
+        if [ -z "$ANDROID_DIR" ]; then
+          ANDROID_DIR="android/app"
+        fi
+        
+        if [ -f "$ANDROID_DIR/build.gradle" ]; then
+          echo "📝 Atualizando versão em $ANDROID_DIR/build.gradle"
+          # Atualizar versionCode e versionName
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.event.inputs.version_code || '1' }}/" "$ANDROID_DIR/build.gradle" || true
+          sed -i "s/versionName \".*\"/versionName \"${{ github.event.inputs.version_name || github.event.release.tag_name || '1.0.0' }}\"/" "$ANDROID_DIR/build.gradle" || true
+        fi
+    
+    - name: Setup Keystore
+      run: |
+        echo "🔐 Configurando keystore para assinatura..."
+        
+        # Criar keystore a partir do secret (se existir)
+        if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+          echo "✅ Keystore criado a partir do secret"
+        else
+          echo "⚠️ Keystore não encontrado nos secrets. Criando keystore temporário para teste..."
+          echo "⚠️ ATENÇÃO: Este APK NÃO está assinado para produção!"
+          echo "⚠️ Configure KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS e KEY_PASSWORD nos secrets"
+        fi
+    
+    - name: Build Signed APK
+      env:
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'mrit-key' }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+      run: |
+        # Encontrar o diretório do projeto Android
+        ANDROID_DIR=$(find . -name "build.gradle" -path "*/app/*" | head -1 | xargs dirname)
+        if [ -z "$ANDROID_DIR" ]; then
+          ANDROID_DIR="android/app"
+        fi
+        
+        ANDROID_ROOT=$(dirname "$ANDROID_DIR")
+        
+        cd "$ANDROID_ROOT" || exit 1
+        
+        # Configurar gradle.properties com informações do keystore
+        if [ -f "keystore.jks" ]; then
+          echo "🔐 Configurando assinatura..."
+          cat >> gradle.properties << EOF
+        MYAPP_RELEASE_STORE_FILE=keystore.jks
+        MYAPP_RELEASE_KEY_ALIAS=${{ secrets.KEY_ALIAS || 'mrit-key' }}
+        MYAPP_RELEASE_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+        MYAPP_RELEASE_KEY_PASSWORD=${{ secrets.KEY_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+        EOF
+          
+          # Copiar keystore para o diretório Android
+          cp ../keystore.jks . || cp keystore.jks . || true
+          
+          # Atualizar build.gradle para usar assinatura
+          if [ -f "app/build.gradle" ]; then
+            # Adicionar configuração de signingConfigs se não existir
+            if ! grep -q "signingConfigs" app/build.gradle; then
+              sed -i '/android {/a\
+        signingConfigs {\
+            release {\
+                storeFile file(MYAPP_RELEASE_STORE_FILE)\
+                storePassword MYAPP_RELEASE_STORE_PASSWORD\
+                keyAlias MYAPP_RELEASE_KEY_ALIAS\
+                keyPassword MYAPP_RELEASE_KEY_PASSWORD\
+            }\
+        }' app/build.gradle
+            fi
+            
+            # Atualizar buildTypes para usar signingConfig
+            if ! grep -q "signingConfig signingConfigs.release" app/build.gradle; then
+              sed -i '/buildTypes {/,/}/ {
+                /release {/a\
+            signingConfig signingConfigs.release
+              }' app/build.gradle
+            fi
+          fi
+        fi
+        
+        # Build do APK
+        echo "🔨 Construindo APK assinado..."
+        ./gradlew assembleRelease || ./gradlew bundleRelease
+        
+        echo "✅ Build concluído!"
+    
+    - name: Find APK files
+      run: |
+        echo "🔍 Procurando arquivos APK..."
+        find . -name "*.apk" -type f | head -20
+        find . -name "*.aab" -type f | head -20
+    
+    - name: Upload Signed APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: mrit-player-signed-apk
+        path: |
+          **/app/build/outputs/apk/release/*.apk
+          **/app/build/outputs/bundle/release/*.aab
+        if-no-files-found: warn
+        retention-days: 90
+    
+    - name: Create Release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          **/app/build/outputs/apk/release/*.apk
+          **/app/build/outputs/bundle/release/*.aab
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

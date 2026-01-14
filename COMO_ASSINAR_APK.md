@@ -68,7 +68,7 @@ base64 -i mrit-player.jks -o keystore-base64.txt
 
    **e) PWA_URL** (se ainda não tiver)
    - Nome: `PWA_URL`
-   - Valor: `https://meuplayer.com.br` (sua URL)
+   - Valor: `https://mega.mrit.com.br` (URL do player)
 
 ## 🚀 Gerar APK Assinado
 

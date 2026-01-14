@@ -8,7 +8,7 @@
    - Vá para: https://www.pwabuilder.com/
 
 2. **Insira sua URL:**
-   - Cole a URL do seu player hospedado (ex: `https://meuplayer.com.br`)
+   - Cole a URL do seu player hospedado: `https://mega.mrit.com.br`
    - Clique em "Start"
 
 3. **Gere o APK:**
@@ -30,7 +30,7 @@
    - Vá para: `Settings` > `Secrets and variables` > `Actions`
    - Clique em "New repository secret"
    - Nome: `PWA_URL`
-   - Valor: `https://meuplayer.com.br` (sua URL)
+   - Valor: `https://mega.mrit.com.br` (URL do player)
    - Clique em "Add secret"
 
 2. **O workflow já está configurado!**
@@ -56,7 +56,7 @@ npm install -g @pwabuilder/cli
 
 # Gerar APK a partir da URL
 pwabuilder android \
-  --url https://meuplayer.com.br \
+  --url https://mega.mrit.com.br \
   --package com.mritsoftware.player \
   --name "MRIT Player" \
   --short-name "MRIT" \

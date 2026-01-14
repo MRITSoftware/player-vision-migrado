@@ -42,7 +42,7 @@ jobs:
     
     - name: Generate APK from URL
       env:
-        PWA_URL: ${{ secrets.PWA_URL || 'https://meuplayer.com.br' }}
+        PWA_URL: ${{ secrets.PWA_URL || 'https://mega.mrit.com.br' }}
         VERSION_CODE: ${{ github.event.inputs.version_code || '1' }}
         VERSION_NAME: ${{ github.event.inputs.version_name || github.event.release.tag_name || '1.0.0' }}
       run: |

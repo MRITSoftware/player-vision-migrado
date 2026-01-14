@@ -37,7 +37,7 @@ jobs:
     
     - name: Generate APK from URL
       env:
-        PWA_URL: ${{ secrets.PWA_URL || 'https://meuplayer.com.br' }}
+        PWA_URL: ${{ secrets.PWA_URL || 'https://mega.mrit.com.br' }}
       run: |
         echo "🔗 Gerando APK a partir da URL: $PWA_URL"
         

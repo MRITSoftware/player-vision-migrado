@@ -546,6 +546,26 @@ async function verificarCodigoSalvo() {
             localStorage.setItem(CODIGO_DISPLAY_KEY, codigoDisplay);
             if (localNome) localStorage.setItem(LOCAL_TELA_KEY, localNome);
             
+            // Esconder elementos de login
+            const inputDiv = document.getElementById("codigoInput");
+            const rodape = document.getElementById("rodape");
+            const logo = document.getElementById("logo");
+            if (inputDiv) {
+              inputDiv.classList.add("fade-out");
+              setTimeout(() => { inputDiv.style.display = "none"; }, 500);
+            }
+            if (rodape) {
+              rodape.classList.add("fade-out");
+              setTimeout(() => { rodape.style.display = "none"; }, 500);
+            }
+            if (logo) {
+              logo.classList.add("fade-out");
+              setTimeout(() => { logo.style.display = "none"; }, 500);
+            }
+            
+            // Entrar em fullscreen automaticamente
+            setTimeout(() => entrarFullscreen(), 300);
+            
             // Iniciar automaticamente
             setTimeout(() => {
               startPlayer();

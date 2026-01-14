@@ -1,6 +1,7 @@
 {
   "name": "player-mrit-vision",
   "version": "1.0.0",
+  "type": "module",
   "main": "player.js",
   "scripts": {
     "dev": "vite",

@@ -23,12 +23,6 @@ jobs:
         node-version: '20'
         cache: 'npm'
     
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Build project
-      run: npm run build
-    
     - name: Setup Java
       uses: actions/setup-java@v4
       with:
@@ -41,24 +35,15 @@ jobs:
     - name: Install PWA Builder CLI
       run: npm install -g @pwabuilder/cli
     
-    - name: Check for icons
+    - name: Generate APK from URL
+      env:
+        PWA_URL: ${{ secrets.PWA_URL || 'https://meuplayer.com.br' }}
       run: |
-        if [ ! -f "icon-192.png" ] || [ ! -f "icon-512.png" ]; then
-          echo "⚠️ Ícones não encontrados. Usando vision_logo.png como fallback..."
-          if [ -f "vision_logo.png" ]; then
-            # Tentar criar ícones usando imagem existente (requer imagem)
-            cp vision_logo.png icon-192.png 2>/dev/null || true
-            cp vision_logo.png icon-512.png 2>/dev/null || true
-          else
-            echo "❌ Nenhum ícone encontrado. Por favor, adicione icon-192.png e icon-512.png ao repositório."
-            exit 1
-          fi
-        fi
-    
-    - name: Generate APK with PWA Builder
-      run: |
+        echo "🔗 Gerando APK a partir da URL: $PWA_URL"
+        
+        # Gerar APK usando PWA Builder com URL
         pwabuilder android \
-          --manifest ./manifest.json \
+          --url "$PWA_URL" \
           --package com.mritsoftware.player \
           --name "MRIT Player" \
           --short-name "MRIT" \
@@ -66,12 +51,45 @@ jobs:
           --orientation any \
           --theme-color "#000000" \
           --background-color "#000000" \
-          --skipPwaValidation || echo "PWA Builder pode ter falhado"
+          --skipPwaValidation || echo "⚠️ PWA Builder pode ter falhado, tentando método alternativo..."
+        
+        # Se falhar, tentar método alternativo com Bubblewrap
+        if [ ! -f "*.apk" ] && [ ! -d "android" ]; then
+          echo "🔄 Tentando método alternativo com Bubblewrap..."
+          npm install -g @bubblewrap/cli || true
+          
+          # Criar diretório temporário
+          mkdir -p /tmp/pwa-build
+          cd /tmp/pwa-build
+          
+          # Inicializar TWA
+          echo "n" | bubblewrap init \
+            --manifest "$PWA_URL/manifest.json" \
+            --package-id com.mritsoftware.player \
+            --app-version-name "1.0.0" \
+            --app-version-code 1 \
+            --app-name "MRIT Player" \
+            --app-short-name "MRIT" \
+            --display-mode standalone \
+            --theme-color "#000000" \
+            --background-color "#000000" \
+            --orientation any \
+            --default-icon "$PWA_URL/icon-512.png" \
+            --maskable-icon "$PWA_URL/icon-512.png" \
+            --skipPwaValidation || true
+          
+          # Build APK
+          if [ -d "twa-manifest" ] || [ -d ".twa-manifest" ]; then
+            cd twa-manifest || cd .twa-manifest
+            bubblewrap build --skipPwaValidation || true
+          fi
+        fi
     
     - name: Find APK files
       run: |
         echo "🔍 Procurando arquivos APK..."
         find . -name "*.apk" -type f | head -20
+        find /tmp -name "*.apk" -type f 2>/dev/null | head -20 || true
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
@@ -81,6 +99,7 @@ jobs:
           **/*.apk
           android/**/*.apk
           .pwabuilder/**/*.apk
+          /tmp/**/*.apk
         if-no-files-found: warn
         retention-days: 30
     

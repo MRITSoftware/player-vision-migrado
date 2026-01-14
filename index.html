@@ -162,27 +162,33 @@
     
     // Forçar fullscreen quando a página carrega se já estiver em modo standalone
     window.addEventListener('load', () => {
-      // Verificar se é PWA instalado
-      if (window.matchMedia('(display-mode: standalone)').matches || 
-          window.navigator.standalone === true ||
-          document.referrer.includes('android-app://')) {
-        // Tentar fullscreen após carregar
-        setTimeout(() => {
-          if (typeof entrarFullscreen === 'function') {
-            entrarFullscreen();
-          }
-        }, 500);
+      // Verificar se há código salvo (player ativo)
+      const codigoSalvo = localStorage.getItem('mrit_display_codigo');
+      
+      // Verificar se é PWA instalado ou APK
+      const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+                    window.navigator.standalone === true ||
+                    document.referrer.includes('android-app://');
+      
+      if (codigoSalvo && isPWA && typeof entrarFullscreen === 'function') {
+        // Tentar fullscreen múltiplas vezes ao carregar
+        setTimeout(() => entrarFullscreen(), 500);
+        setTimeout(() => entrarFullscreen(), 1500);
+        setTimeout(() => entrarFullscreen(), 3000);
+        setTimeout(() => entrarFullscreen(), 5000);
       }
     });
     
-    // Tentar fullscreen quando a página ganha foco (ao reabrir)
+    // Tentar fullscreen quando a página ganha foco (ao reabrir o app)
     window.addEventListener('focus', () => {
       // Verificar se há código salvo (player ativo)
       const codigoSalvo = localStorage.getItem('mrit_display_codigo');
       if (codigoSalvo && typeof entrarFullscreen === 'function') {
+        console.log("🔄 App ganhou foco, tentando fullscreen...");
         setTimeout(() => entrarFullscreen(), 300);
         setTimeout(() => entrarFullscreen(), 1000);
         setTimeout(() => entrarFullscreen(), 2000);
+        setTimeout(() => entrarFullscreen(), 3500);
       }
     });
     
@@ -191,7 +197,23 @@
       if (!document.hidden) {
         const codigoSalvo = localStorage.getItem('mrit_display_codigo');
         if (codigoSalvo && typeof entrarFullscreen === 'function') {
+          console.log("👁️ Página ficou visível, tentando fullscreen...");
           setTimeout(() => entrarFullscreen(), 500);
+          setTimeout(() => entrarFullscreen(), 1500);
+          setTimeout(() => entrarFullscreen(), 3000);
+        }
+      }
+    });
+    
+    // Tentar fullscreen quando a página é mostrada (pageshow - ao voltar do cache)
+    window.addEventListener('pageshow', (event) => {
+      // Se veio do cache (back/forward), tentar fullscreen
+      if (event.persisted) {
+        const codigoSalvo = localStorage.getItem('mrit_display_codigo');
+        if (codigoSalvo && typeof entrarFullscreen === 'function') {
+          console.log("📄 Página restaurada do cache, tentando fullscreen...");
+          setTimeout(() => entrarFullscreen(), 500);
+          setTimeout(() => entrarFullscreen(), 1500);
         }
       }
     });

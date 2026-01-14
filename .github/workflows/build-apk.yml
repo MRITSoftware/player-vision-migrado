@@ -1,0 +1,96 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+  release:
+    types: [created]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Build project
+      run: npm run build
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    - name: Install PWA Builder CLI
+      run: npm install -g @pwabuilder/cli
+    
+    - name: Check for icons
+      run: |
+        if [ ! -f "icon-192.png" ] || [ ! -f "icon-512.png" ]; then
+          echo "⚠️ Ícones não encontrados. Usando vision_logo.png como fallback..."
+          if [ -f "vision_logo.png" ]; then
+            # Tentar criar ícones usando imagem existente (requer imagem)
+            cp vision_logo.png icon-192.png 2>/dev/null || true
+            cp vision_logo.png icon-512.png 2>/dev/null || true
+          else
+            echo "❌ Nenhum ícone encontrado. Por favor, adicione icon-192.png e icon-512.png ao repositório."
+            exit 1
+          fi
+        fi
+    
+    - name: Generate APK with PWA Builder
+      run: |
+        pwabuilder android \
+          --manifest ./manifest.json \
+          --package com.mritsoftware.player \
+          --name "MRIT Player" \
+          --short-name "MRIT" \
+          --display standalone \
+          --orientation any \
+          --theme-color "#000000" \
+          --background-color "#000000" \
+          --skipPwaValidation || echo "PWA Builder pode ter falhado"
+    
+    - name: Find APK files
+      run: |
+        echo "🔍 Procurando arquivos APK..."
+        find . -name "*.apk" -type f | head -20
+    
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mrit-player-apk
+        path: |
+          **/*.apk
+          android/**/*.apk
+          .pwabuilder/**/*.apk
+        if-no-files-found: warn
+        retention-days: 30
+    
+    - name: Create Release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          **/*.apk
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

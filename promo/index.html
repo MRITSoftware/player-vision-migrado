@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin • Login & Criar Promo</title>
+  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    :root { --bg:#0b0b0d; --card:#15161a; --muted:#9aa3af; --text:#e5e7eb; --pri:#22c55e; --err:#ef4444; }
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
+    body{margin:0;background:var(--bg);color:var(--text);display:grid;place-items:center;min-height:100vh;padding:24px}
+    .card{width:100%;max-width:620px;background:var(--card);border:1px solid #23252b;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:24px}
+    h1{margin:0 0 8px}
+    h2{margin:0 0 16px;font-size:18px;color:var(--muted)}
+    label{display:block;margin:12px 0 6px;color:var(--muted);font-size:14px}
+    input,textarea{width:100%;background:#0f1115;color:var(--text);border:1px solid #2a2d36;border-radius:10px;padding:12px;outline:none}
+    textarea{min-height:110px;resize:vertical}
+    .row{display:flex;gap:12px}
+    .row>div{flex:1}
+    .actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:18px}
+    button{appearance:none;border:0;border-radius:10px;padding:12px 16px;cursor:pointer}
+    .btn{background:#1f2937;color:#e5e7eb;border:1px solid #374151}
+    .btn.pri{background:var(--pri);color:#04140a;border:1px solid #1ba94c;font-weight:600}
+    .muted{color:var(--muted);font-size:14px}
+    .err{color:var(--err);font-weight:600}
+    .ok{color:#22d3ee;font-weight:600}
+    .divider{height:1px;background:#23252b;margin:18px 0}
+    .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+    .hidden{display:none}
+    .pill{font-size:12px;background:#0f1115;border:1px solid #2a2d36;padding:6px 10px;border-radius:999px;color:#cbd5e1}
+    .qr-wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+    .qr-box{background:#0f1115;border:1px solid #2a2d36;border-radius:12px;padding:12px}
+    a{color:#60a5fa;text-decoration:none}
+    a:hover{text-decoration:underline}
+    .download-btn{background:var(--pri);color:#04140a;border:1px solid #1ba94c;font-weight:600;margin-top:10px}
+    .download-btn:hover{background:#1ba94c;transform:translateY(-1px)}
+    .preview-container{background:white;border-radius:20px;box-shadow:0 20px 40px rgba(0,0,0,0.3);overflow:hidden;max-width:500px;margin:20px auto;display:none;position:relative}
+    .preview-header{background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;padding:40px;text-align:center;border-radius:20px 20px 0 0}
+    .preview-content{background:white;padding:60px;text-align:center;min-height:400px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:0 0 20px 20px}
+    .preview-qr{margin:0;display:flex;justify-content:center;align-items:center}
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <section id="loginCard" class="card">
+    <h1>Entrar</h1>
+    <h2>Supabase Auth</h2>
+    <div class="row">
+      <div>
+        <label>E-mail</label>
+        <input id="email" type="email" placeholder="voce@exemplo.com" autocomplete="email" />
+      </div>
+      <div>
+        <label>Senha</label>
+        <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btnSignUp" class="btn">Registrar</button>
+      <button id="btnSignIn" class="btn pri">Entrar</button>
+    </div>
+    <div id="authMsg" class="muted" style="min-height:20px;margin-top:6px;"></div>
+  </section>
+
+  <!-- APP -->
+  <section id="appCard" class="card hidden">
+    <div class="topbar">
+      <div>
+        <span class="pill" id="userEmail">carregando…</span>
+        <span class="pill" id="userId">uid</span>
+      </div>
+      <button id="btnLogout" class="btn">Sair</button>
+    </div>
+    <div class="divider"></div>
+
+    <h1>Criar Cupom</h1>
+    <h2>Digite o código do cupom</h2>
+
+    <form id="promoForm">
+      <div>
+        <label for="codigo_promo">Código do Cupom</label>
+        <input id="codigo_promo" type="text" placeholder="EX: BLACKFRI" required />
+      </div>
+      <div class="actions">
+        <button type="reset" class="btn">Limpar</button>
+        <button type="submit" class="btn pri">Gerar QR Code</button>
+      </div>
+      <div id="formMsg" class="muted" style="min-height:22px;margin-top:6px;"></div>
+    </form>
+
+    <div id="qrSection" class="hidden">
+      <div class="divider"></div>
+      <h2>QR Code da Promo</h2>
+      <div class="qr-wrap">
+        <div class="qr-box"><div id="qrcode"></div></div>
+        <div>
+          <div class="muted">Página pública:</div>
+          <div style="word-break:break-all"><a id="promoUrl" href="#" target="_blank" rel="noopener"></a></div>
+          <div style="margin-top:8px" class="muted">id_promo: <code id="promoId"></code></div>
+          <div style="margin-top:8px" class="muted">QR (PNG) salvo em: <br><a id="qrImgUrl" href="#" target="_blank" rel="noopener"></a></div>
+        </div>
+      </div>
+      
+      <!-- Preview e Download -->
+      <div class="divider"></div>
+      <h2>Preview e Download</h2>
+      <div id="previewContainer" class="preview-container">
+        <div class="preview-header">
+          <h1 style="margin:0;font-size:1.8em;">⚡CUPOM</h1>
+        </div>
+        <div class="preview-content">
+          <div class="preview-qr" id="previewQr"></div>
+        </div>
+      </div>
+      <button id="downloadBtn" class="download-btn hidden">📥 Download Horizontal (40")</button>
+    </div>
+  </section>
+
+<script>
+  // === CONFIG ===
+  const SUPABASE_URL = "https://base.muraltv.com.br";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzUyODA3NjAwLCJleHAiOjE5MTA1NzQwMDB9.P4goMdCvXKPk9ViLYlSUk7nR_zeW3yUw5ixjv7Mk99g";
+  const BUCKET = "promos";     // <<< ajuste para o nome do seu bucket
+  const TABLE  = "promo";      // <<< ajuste se sua tabela tiver outro nome
+  const PUBLIC_PAGE = "promo_show.html"; // página pública que lerá ?id=
+
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // === UI refs ===
+  const loginCard = document.getElementById("loginCard");
+  const appCard   = document.getElementById("appCard");
+  const authMsg   = document.getElementById("authMsg");
+  const formMsg   = document.getElementById("formMsg");
+  const userEmailSpan = document.getElementById("userEmail");
+  const userIdSpan    = document.getElementById("userId");
+  const qrSection = document.getElementById("qrSection");
+  const qrcodeDiv = document.getElementById("qrcode");
+  const promoUrlA = document.getElementById("promoUrl");
+  const promoIdEl = document.getElementById("promoId");
+  const qrImgUrlA = document.getElementById("qrImgUrl");
+  const previewContainer = document.getElementById("previewContainer");
+  const downloadBtn = document.getElementById("downloadBtn");
+  const previewQr = document.getElementById("previewQr");
+
+  const show = el => el.classList.remove("hidden");
+  const hide = el => el.classList.add("hidden");
+
+  function randIdPromo(len=6){
+    const chars="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let out=""; crypto.getRandomValues(new Uint8Array(len)).forEach(v => out+=chars[v%chars.length]);
+    return out;
+  }
+  const extFrom = n => (n.split(".").pop()||"bin").toLowerCase();
+
+  // Sessão
+  (async () => {
+    const { data:{ session }} = await client.auth.getSession();
+    if (session?.user) enterApp(session.user); else { hide(appCard); show(loginCard); }
+  })();
+
+  // Auth
+  document.getElementById("btnSignIn").onclick = async ()=>{
+    authMsg.textContent="Entrando…";
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error){ authMsg.innerHTML=`<span class="err">${error.message}</span>`; return; }
+    enterApp(data.user);
+    authMsg.textContent="";
+  };
+  document.getElementById("btnSignUp").onclick = async ()=>{
+    authMsg.textContent="Registrando…";
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const { error } = await client.auth.signUp({ email, password });
+    authMsg.innerHTML = error ? `<span class="err">${error.message}</span>` : `✅ Verifique seu e-mail e depois faça login.`;
+  };
+  document.getElementById("btnLogout").onclick = async ()=>{
+    await client.auth.signOut();
+    hide(appCard); show(loginCard); authMsg.textContent="";
+    document.getElementById("promoForm").reset(); hide(qrSection); qrcodeDiv.innerHTML="";
+  };
+
+  function enterApp(user){
+    userEmailSpan.textContent = user.email ?? "(sem e-mail)";
+    userIdSpan.textContent = user.id;
+    hide(loginCard); show(appCard);
+  }
+
+  // Util: espera n ms
+  const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+  // Função auxiliar para desenhar retângulos arredondados
+  function drawRoundedRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+
+  // Função para baixar imagem horizontal (2560x1080)
+  async function downloadImage() {
+    const button = downloadBtn;
+    button.textContent = '🔄 Gerando imagem horizontal...';
+    button.disabled = true;
+
+    try {
+      // Aguarda mais tempo para garantir que tudo foi renderizado
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Força o redimensionamento do container se necessário
+      previewContainer.style.display = 'block';
+      previewContainer.style.visibility = 'visible';
+
+      // 1. Cria o canvas final com as dimensões desejadas
+      const finalWidth = 2560;
+      const finalHeight = 1080;
+      const finalCanvas = document.createElement('canvas');
+      finalCanvas.width = finalWidth;
+      finalCanvas.height = finalHeight;
+      const ctx = finalCanvas.getContext('2d');
+
+      // 2. Preenche o canvas final com fundo branco
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, finalWidth, finalHeight);
+
+      // 3. Calcula as dimensões do card promo centralizado
+      const cardWidth = 600;
+      const cardHeight = 400;
+      const cardX = (finalWidth - cardWidth) / 2;
+      const cardY = (finalHeight - cardHeight) / 2;
+
+      // 4. Desenha o fundo do card (branco com bordas arredondadas)
+      const radius = 20;
+      ctx.fillStyle = '#FFFFFF';
+      drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, radius);
+      ctx.fill();
+
+      // 5. Desenha o header com gradiente e bordas arredondadas
+      const headerHeight = 80;
+      const gradient = ctx.createLinearGradient(cardX, cardY, cardX + cardWidth, cardY);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      ctx.fillStyle = gradient;
+      drawRoundedRect(ctx, cardX, cardY, cardWidth, headerHeight, radius);
+      ctx.fill();
+
+      // 6. Desenha o texto "⚡PROMO" no header
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 48px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚡PROMO', cardX + cardWidth/2, cardY + 50);
+
+      // 7. Desenha o QR code centralizado na área branca
+      const qrSize = 200;
+      const qrX = cardX + (cardWidth - qrSize) / 2;
+      const qrY = cardY + headerHeight + (cardHeight - headerHeight - qrSize) / 2;
+
+      // Pega o QR code do preview
+      const qrCanvas = previewQr.querySelector('canvas');
+      if (qrCanvas) {
+        ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+      }
+
+      // 8. Converte o finalCanvas para Blob
+      const blob = await new Promise((resolve, reject) => {
+        finalCanvas.toBlob((blob) => {
+          if (blob && blob.size > 0) {
+            resolve(blob);
+          } else {
+            reject(new Error('Blob inválido gerado'));
+          }
+        }, 'image/png', 0.95);
+      });
+
+      // Cria o link de download usando o blob
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      link.download = `promo-qr-horizontal-40pol-${timestamp}.png`;
+      link.href = url;
+      
+      // Simula o clique para iniciar o download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Limpa a URL do blob após o download
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      button.textContent = '✅ Download Horizontal Concluído!';
+      button.style.background = '#1ba94c';
+      
+      // Volta ao normal após 2 segundos
+      setTimeout(() => {
+        button.textContent = '📥 Download Horizontal (40")';
+        button.style.background = 'var(--pri)';
+        button.disabled = false;
+      }, 2000);
+
+    } catch (error) {
+      console.error('Erro ao gerar imagem horizontal:', error);
+      button.textContent = '❌ Erro ao gerar imagem';
+      button.style.background = '#e74c3c';
+      
+      setTimeout(() => {
+        button.textContent = '📥 Download Horizontal (40")';
+        button.style.background = 'var(--pri)';
+        button.disabled = false;
+      }, 3000);
+    }
+  }
+
+  // Gera um PNG do QR em canvas off-screen e retorna um Blob
+  async function generateQrPngBlob(text, size=512){
+    // container fora da tela
+    const wrap = document.createElement("div");
+    wrap.style.position = "fixed";
+    wrap.style.left = "-9999px";
+    document.body.appendChild(wrap);
+
+    // gera QR
+    new QRCode(wrap, { text, width:size, height:size, correctLevel: QRCode.CorrectLevel.M });
+
+    // dá tempo para o canvas aparecer
+    await sleep(20);
+
+    let canvas = wrap.querySelector("canvas");
+    if (!canvas){
+      // alguns ambientes geram <img>; converte para canvas
+      const img = wrap.querySelector("img");
+      const c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      const ctx = c.getContext("2d");
+      if (img){
+        if (img.complete) ctx.drawImage(img,0,0,size,size);
+        else await new Promise(res=>{ img.onload=()=>{ctx.drawImage(img,0,0,size,size);res();}; });
+      }
+      canvas = c;
+    }
+
+    const blob = await new Promise(res=> canvas.toBlob(res, "image/png"));
+    document.body.removeChild(wrap);
+    return blob;
+  }
+
+  // FORM: cria promo, faz upload, gera QR PNG, sobe QR e SALVA url_qrcode (imagem)
+  document.getElementById("promoForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    formMsg.textContent="Enviando…";
+    const { data:{ user }} = await client.auth.getUser();
+    if (!user){ formMsg.innerHTML=`<span class="err">Faça login.</span>`; return; }
+
+    const codigo_promo = document.getElementById("codigo_promo").value.trim();
+    if (!codigo_promo){
+      formMsg.innerHTML=`<span class="err">Código do cupom é obrigatório.</span>`; return;
+    }
+
+    // 1) id e URL da página pública
+    const id_promo = randIdPromo(6);
+    const pageBase = `${location.origin}${location.pathname.replace(/[^/]+$/, "")}${PUBLIC_PAGE}`;
+    const pageUrl  = `${pageBase}?id=${encodeURIComponent(id_promo)}`;
+
+    // 2) Não precisa de upload de imagem
+    const imagem_promo = null;
+
+    // 3) Gera PNG do QR e faz upload
+    const qrBlob = await generateQrPngBlob(pageUrl, 512);
+    const qrPath = `${user.id}/qr/${id_promo}.png`;
+    const { error: upErrQR } = await client.storage.from(BUCKET).upload(qrPath, qrBlob, {
+      cacheControl: '3600', upsert:true, contentType: 'image/png'
+    });
+    if (upErrQR){ formMsg.innerHTML=`<span class="err">Upload do QR: ${upErrQR.message}</span>`; return; }
+    const { data:pubQR } = client.storage.from(BUCKET).getPublicUrl(qrPath);
+    const url_qrcode = pubQR?.publicUrl; // <<<<<<<<<< URL da IMAGEM PNG do QR
+
+    // 4) INSERT com url_qrcode = URL da imagem do QR
+    const { data:ins, error:insErr } = await client
+      .from(TABLE)
+      .insert({
+        uid: user.id,
+        id_promo,
+        codigo_promo,
+        texto_promo: codigo_promo, // Usa o código como texto também
+        valor_promo: 0,
+        imagem_promo,
+        url_qrcode   // salva a URL do PNG do QR
+      })
+      .select()
+      .single();
+
+    if (insErr){ formMsg.innerHTML=`<span class="err">Insert: ${insErr.message}</span>`; return; }
+
+    // 5) UI: mostra QR e links
+    formMsg.innerHTML=`<span class="ok">Promo criada!</span> id_promo: <code>${ins.id_promo}</code>`;
+    promoIdEl.textContent = ins.id_promo;
+
+    // Link da página pública (para abrir no celular, etc.)
+    promoUrlA.textContent = pageUrl;
+    promoUrlA.href = pageUrl;
+
+    // Link do PNG do QR salvo no Storage
+    qrImgUrlA.textContent = url_qrcode;
+    qrImgUrlA.href = url_qrcode;
+
+    // Mostra também um QR na tela (visual)
+    qrcodeDiv.innerHTML = "";
+    new QRCode(qrcodeDiv, { text: pageUrl, width:256, height:256, correctLevel: QRCode.CorrectLevel.M });
+
+    // Gera QR no preview (tamanho maior para monitor 40")
+    previewQr.innerHTML = "";
+    new QRCode(previewQr, { text: pageUrl, width:400, height:400, correctLevel: QRCode.CorrectLevel.M });
+
+    // Mostra preview e botão de download
+    show(previewContainer);
+    show(downloadBtn);
+    show(qrSection);
+
+    // Adiciona evento ao botão de download
+    downloadBtn.onclick = downloadImage;
+
+    // limpa o form
+    e.target.reset();
+  });
+</script>
+</body>
+</html>

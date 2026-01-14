@@ -1,0 +1,18 @@
+{
+  "name": "player-mrit-vision",
+  "version": "1.0.0",
+  "main": "player.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:apk": "npm run build && pwabuilder android --manifest ./manifest.json --package com.mritsoftware.player --name 'MRIT Player' --short-name 'MRIT' --display standalone --orientation any --theme-color '#000000' --background-color '#000000' --skipPwaValidation"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "vite": "^7.0.6"
+  }
+}

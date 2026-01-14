@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <!-- cobre áreas seguras (iOS) e melhora cálculo da viewport -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="manifest" href="manifest.json" />
+  <title>MRIT Player</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: #fff;
+    }
+
+    /* Logo fixo no topo */
+    #logo {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 240px;
+      width: 100%;
+      height: auto;
+      animation: fadeIn 1s ease;
+      z-index: 3;
+    }
+
+    /* Rodapé */
+    footer {
+      position: fixed;
+      bottom: 10px;
+      width: 100%;
+      text-align: center;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      font-weight: 300;
+      letter-spacing: 1px;
+      user-select: none;
+      transition: opacity 0.5s ease;
+      z-index: 3;
+    }
+    footer.fade-out { opacity: 0; }
+    
+    /* Link do rodapé */
+    footer a {
+      color: inherit;
+      text-decoration: none;
+      transition: color 0.3s ease;
+    }
+    footer a:hover {
+      color: rgba(255, 255, 255, 1);
+      text-decoration: underline;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-20px); } }
+
+    #codigoInput {
+      display: flex; flex-direction: column; align-items: center; text-align: center;
+      gap: 20px; padding: 40px; border-radius: 12px;
+      background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(6px);
+      width: 90%; max-width: 320px; animation: fadeIn 0.8s ease forwards;
+      margin-top: 120px; /* espaço para o logo */
+      z-index: 3;
+    }
+    #codigoInput.fade-out { animation: fadeOut 0.6s ease forwards; }
+
+    #codigoTela, #localTela {
+      padding: 14px; font-size: 1.2rem; width: 100%; max-width: 300px;
+      border: none; border-radius: 8px; outline: none; text-align: center;
+      background-color: #fff;
+      color: #000;
+    }
+    #codigoInput button {
+      padding: 14px 24px; font-size: 1.2rem; background: #007bff; color: #fff;
+      border: none; border-radius: 8px; cursor: pointer; transition: 0.3s;
+      width: 100%; max-width: 300px;
+    }
+    #codigoInput button:hover { background: #0056b3; }
+
+    @media (max-width: 768px) {
+      #codigoInput { padding: 30px; gap: 16px; }
+      #codigoTela, #codigoInput button { font-size: 1rem; }
+      footer { font-size: 12px; }
+    }
+
+    /* Mídia ocupa 100% da viewport (sem “filete” nas bordas).
+       O JS altera object-fit para cover/contain conforme regras e orientação. */
+    video, img {
+      position: fixed;
+      inset: -1px; /* bleed 1px */
+      width: calc(100dvw + 2px);
+      height: calc(100dvh + 2px);
+      width: calc(100vw + 2px);   /* fallback */
+      height: calc(100vh + 2px);  /* fallback */
+
+      object-fit: cover;            /* <<< full screen (aceita corte) */
+      object-position: center center;
+      background: #000;
+      border: 0;
+      outline: none;
+      display: block;
+      backface-visibility: hidden;
+      transform: translateZ(0);
+      z-index: 1;
+    }
+
+    /* Respeita rotação EXIF de fotos verticais */
+    img { image-orientation: from-image; }
+  </style>
+</head>
+<body>
+  <!-- Logo fixo -->
+  <img id="logo" src="vision_logo.png" alt="Logo Vision" />
+
+  <!-- Área de login -->
+  <div id="codigoInput">
+    <input
+      type="text"
+      id="codigoTela"
+      placeholder="Código do display"
+      style="text-transform: uppercase;"
+      oninput="this.value = this.value.toUpperCase()"
+    />
+    <input
+      type="text"
+      id="localTela"
+      placeholder="Local da tela (ex: Sala 1, Recepção)"
+    />
+    <button id="btnEntrar">Iniciar</button>
+  </div>
+
+  <video id="videoPlayer" autoplay muted playsinline style="display:none"></video>
+  <img id="imgPlayer" style="display:none" />
+
+  <!-- Rodapé -->
+  <footer id="rodape"><a href="https://www.mrit.com.br" target="_blank" style="color: inherit; text-decoration: none;">© 2025 MRIT</a></footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <!-- hls.js para buffer via MSE (apenas quando URL for .m3u8) -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="player.js"></script>
+
+  <script>
+    document.getElementById("btnEntrar").addEventListener("click", () => {
+      startPlayer();
+    });
+  </script>
+</body>
+</html>

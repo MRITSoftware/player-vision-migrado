@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Promo</title>
+  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <style>
+    :root { --bg:#0b0b0d; --card:#15161a; --muted:#9aa3af; --text:#e5e7eb; --pri:#22c55e; }
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
+    body{margin:0;background:var(--bg);color:var(--text);display:grid;place-items:center;min-height:100vh;padding:24px}
+    .card{width:100%;max-width:640px;background:var(--card);border:1px solid #23252b;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:24px;text-align:center}
+    h1{margin:0 0 6px}
+    h2{margin:0 0 16px;font-size:18px;color:var(--muted)}
+    .badge{display:inline-block;background:#0f1115;border:1px solid #2a2d36;color:#cbd5e1;padding:6px 10px;border-radius:999px;font-size:12px}
+    img{max-width:100%;border-radius:12px;border:1px solid #2a2d36}
+    .big{font-size:34px;font-weight:800;letter-spacing:.5px;margin:10px 0}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <h1>Carregando…</h1>
+    <h2 class="muted">Buscando a promoção</h2>
+  </div>
+
+<script>
+  const SUPABASE_URL = "https://base.muraltv.com.br";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzUyODA3NjAwLCJleHAiOjE5MTA1NzQwMDB9.P4goMdCvXKPk9ViLYlSUk7nR_zeW3yUw5ixjv7Mk99g";
+  const TABLE = "promo"; // ajuste se necessário
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const q = new URLSearchParams(location.search);
+  const id = (q.get("id") || "").trim();
+
+  const card = document.getElementById("card");
+
+  async function main(){
+    if (!id){
+      card.innerHTML = `<h1>QR inválido</h1><p class="muted">Parâmetro <code>id</code> não informado.</p>`;
+      return;
+    }
+    // Consulta pela coluna id_promo
+    const { data, error } = await client.from(TABLE)
+      .select("id_promo,codigo_promo,texto_promo,valor_promo,imagem_promo,created_at")
+      .eq("id_promo", id)
+      .limit(1)
+      .maybeSingle();
+
+    if (error){
+      card.innerHTML = `<h1>Erro</h1><p class="muted">${error.message}</p>`;
+      return;
+    }
+    if (!data){
+      card.innerHTML = `<h1>Não encontrada</h1><p class="muted">Nenhum cupom com id <code>${id}</code>.</p>`;
+      return;
+    }
+
+    // Render simples
+    card.innerHTML = `
+
+      <h1 class="big">${escapeHtml(data.codigo_promo || "SEM CÓDIGO")}</h1>
+
+    `;
+  }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
+
+  main();
+</script>
+</body>
+</html>

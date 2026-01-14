@@ -641,10 +641,12 @@ async function verificarCodigoSalvo() {
     }
     
     // FALLBACK: Método antigo (localStorage) - retrocompatibilidade
-    const codigoSalvo = localStorage.getItem(CODIGO_DISPLAY_KEY);
+    // Usar o código já lido do localStorage (se não encontrou no banco)
+    const codigoSalvo = codigoLocal || localStorage.getItem(CODIGO_DISPLAY_KEY);
+    const localSalvo = localLocal || localStorage.getItem(LOCAL_TELA_KEY);
     
-    if (codigoSalvo && codigoSalvo.trim()) {
-      console.log("📱 Código salvo encontrado (localStorage):", codigoSalvo);
+    if (codigoSalvo && codigoSalvo.trim() && localSalvo && localSalvo.trim()) {
+      console.log("📱 Código e local salvos encontrados (localStorage fallback):", codigoSalvo, localSalvo);
       
       // Preencher o campo com o código salvo
       const codigoField = document.getElementById("codigoTela");
@@ -652,10 +654,15 @@ async function verificarCodigoSalvo() {
       if (codigoField) {
         codigoField.value = codigoSalvo.trim().toUpperCase();
       }
-      const localSalvo = localStorage.getItem(LOCAL_TELA_KEY);
       if (localField && localSalvo) {
         localField.value = localSalvo;
       }
+      
+      // FORÇAR fullscreen se há código E local salvos (obrigatório)
+      console.log("🔒 Código e local salvos detectados - FORÇANDO fullscreen obrigatório");
+      setTimeout(() => entrarFullscreen(), 200);
+      setTimeout(() => entrarFullscreen(), 800);
+      setTimeout(() => entrarFullscreen(), 1500);
       
       // Verificar se o código ainda é válido no banco
       if (navigator.onLine) {
@@ -706,9 +713,20 @@ async function verificarCodigoSalvo() {
                 }
               }
               
+              // FORÇAR fullscreen antes de iniciar (código salvo = obrigatório)
+              console.log("🔒 Código válido detectado - FORÇANDO fullscreen obrigatório");
+              entrarFullscreen(); // Imediato
+              setTimeout(() => entrarFullscreen(), 200);
+              setTimeout(() => entrarFullscreen(), 500);
+              
               setTimeout(() => {
                 startPlayer();
               }, 1000);
+              
+              // Continuar tentando fullscreen após iniciar
+              setTimeout(() => entrarFullscreen(), 1500);
+              setTimeout(() => entrarFullscreen(), 2500);
+              setTimeout(() => entrarFullscreen(), 4000);
               return;
             } else {
               // Está locked E não é o mesmo dispositivo
@@ -2441,11 +2459,22 @@ function entrarFullscreen() {
     return; // Já está em fullscreen
   }
   
+  // Verificar se há código E local salvos - se sim, FORÇAR fullscreen
+  const codigoSalvo = localStorage.getItem(CODIGO_DISPLAY_KEY);
+  const localSalvo = localStorage.getItem(LOCAL_TELA_KEY);
+  const temCodigoCompleto = codigoSalvo && codigoSalvo.trim() && localSalvo && localSalvo.trim();
+  
+  if (temCodigoCompleto) {
+    console.log("🔒 Código e local salvos detectados - OBRIGANDO fullscreen");
+  }
+  
   // Tentar entrar em fullscreen com várias estratégias
   const tryFullscreen = () => {
     if (elem.requestFullscreen) {
       return elem.requestFullscreen().catch(err => {
-        console.log("⚠️ requestFullscreen falhou:", err.message);
+        if (temCodigoCompleto) {
+          console.log("⚠️ requestFullscreen falhou (tentando novamente):", err.message);
+        }
         return false;
       });
     } else if (elem.webkitRequestFullscreen) {
@@ -2463,8 +2492,13 @@ function entrarFullscreen() {
   
   // Tentar imediatamente
   tryFullscreen().then(success => {
-    if (!success) {
-      // Se falhar, tentar novamente após um pequeno delay
+    if (!success && temCodigoCompleto) {
+      // Se falhar E há código salvo, tentar mais agressivamente
+      setTimeout(() => tryFullscreen(), 100);
+      setTimeout(() => tryFullscreen(), 300);
+      setTimeout(() => tryFullscreen(), 600);
+    } else if (!success) {
+      // Se falhar sem código salvo, tentar uma vez mais
       setTimeout(() => tryFullscreen(), 200);
     }
   });
@@ -2479,6 +2513,18 @@ function entrarFullscreen() {
         body.webkitRequestFullscreen();
       }
     }, 100);
+    
+    // Se há código salvo, tentar mais vezes no Android
+    if (temCodigoCompleto) {
+      setTimeout(() => {
+        const body = document.body;
+        if (body.requestFullscreen) {
+          body.requestFullscreen().catch(() => {});
+        } else if (body.webkitRequestFullscreen) {
+          body.webkitRequestFullscreen();
+        }
+      }, 300);
+    }
   }
 }
 

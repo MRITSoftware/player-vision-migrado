@@ -58,9 +58,9 @@ jobs:
           echo "🔄 Tentando método alternativo com Bubblewrap..."
           npm install -g @bubblewrap/cli || true
           
-          # Criar diretório temporário
-          mkdir -p /tmp/pwa-build
-          cd /tmp/pwa-build
+          # Criar diretório no workspace (não usar /tmp)
+          mkdir -p ./bubblewrap-build
+          cd ./bubblewrap-build
           
           # Inicializar TWA
           echo "n" | bubblewrap init \
@@ -82,24 +82,49 @@ jobs:
           if [ -d "twa-manifest" ] || [ -d ".twa-manifest" ]; then
             cd twa-manifest || cd .twa-manifest
             bubblewrap build --skipPwaValidation || true
+            # Voltar para workspace root
+            cd ../../..
           fi
         fi
     
     - name: Find APK files
       run: |
         echo "🔍 Procurando arquivos APK..."
-        find . -name "*.apk" -type f | head -20
-        find /tmp -name "*.apk" -type f 2>/dev/null | head -20 || true
+        find . -name "*.apk" -type f 2>/dev/null | head -20 || echo "Nenhum APK encontrado em ."
+        echo "📁 Verificando diretórios específicos..."
+        ls -la android/app/build/outputs/apk/ 2>/dev/null || echo "Diretório android não encontrado"
+        ls -la .pwabuilder/ 2>/dev/null || echo "Diretório .pwabuilder não encontrado"
+    
+    - name: Copy APK to workspace root
+      run: |
+        echo "📦 Copiando APKs para raiz do workspace..."
+        mkdir -p ./apk-output
+        
+        # Procurar APKs em locais específicos
+        if [ -d "android/app/build/outputs/apk" ]; then
+          find android/app/build/outputs/apk -name "*.apk" -type f -exec cp {} ./apk-output/ \; 2>/dev/null || true
+        fi
+        
+        if [ -d ".pwabuilder" ]; then
+          find .pwabuilder -name "*.apk" -type f -exec cp {} ./apk-output/ \; 2>/dev/null || true
+        fi
+        
+        if [ -d "bubblewrap-build" ]; then
+          find bubblewrap-build -name "*.apk" -type f -exec cp {} ./apk-output/ \; 2>/dev/null || true
+        fi
+        
+        # Procurar APKs na raiz
+        find . -maxdepth 1 -name "*.apk" -type f -exec cp {} ./apk-output/ \; 2>/dev/null || true
+        
+        echo "📋 APKs encontrados:"
+        ls -lh ./apk-output/ 2>/dev/null || echo "⚠️ Nenhum APK encontrado"
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: mrit-player-apk
         path: |
-          **/*.apk
-          android/**/*.apk
-          .pwabuilder/**/*.apk
-          /tmp/**/*.apk
+          apk-output/*.apk
         if-no-files-found: warn
         retention-days: 30
     

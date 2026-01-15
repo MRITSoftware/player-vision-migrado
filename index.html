@@ -69,6 +69,47 @@
     @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-20px); } }
 
+    /* Painel de Debug Visual */
+    #debugPanel {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      right: 10px;
+      max-height: 200px;
+      background: rgba(0, 0, 0, 0.9);
+      color: #0f0;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      padding: 10px;
+      border: 2px solid #0f0;
+      border-radius: 5px;
+      overflow-y: auto;
+      z-index: 10000;
+      display: none;
+    }
+    #debugPanel.show { display: block; }
+    #debugPanel .log { margin: 2px 0; }
+    #debugPanel .error { color: #f00; }
+    #debugPanel .warn { color: #ff0; }
+    #debugPanel .info { color: #0ff; }
+    #debugToggle {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      width: 50px;
+      height: 50px;
+      background: rgba(0, 255, 0, 0.3);
+      border: 2px solid #0f0;
+      border-radius: 50%;
+      color: #0f0;
+      font-size: 20px;
+      cursor: pointer;
+      z-index: 10001;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     #codigoInput {
       display: flex; flex-direction: column; align-items: center; text-align: center;
       gap: 20px; padding: 40px; border-radius: 12px;
@@ -145,6 +186,10 @@
   <!-- Rodapé -->
   <footer id="rodape"><a href="https://www.mrit.com.br" target="_blank" style="color: inherit; text-decoration: none;">© 2025 MRIT</a></footer>
 
+  <!-- Painel de Debug Visual -->
+  <div id="debugPanel"></div>
+  <button id="debugToggle" title="Mostrar/Ocultar Debug">🔍</button>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
   <!-- hls.js para buffer via MSE (apenas quando URL for .m3u8) -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -153,34 +198,107 @@
   <script src="player.js"></script>
 
   <script>
+    // Sistema de Debug Visual
+    const debugPanel = document.getElementById('debugPanel');
+    const debugToggle = document.getElementById('debugToggle');
+    let debugLogs = [];
+    const MAX_LOGS = 50;
+
+    function addDebugLog(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const logEntry = { time: timestamp, message, type };
+      debugLogs.push(logEntry);
+      
+      // Limitar quantidade de logs
+      if (debugLogs.length > MAX_LOGS) {
+        debugLogs.shift();
+      }
+      
+      // Atualizar painel se estiver visível
+      if (debugPanel.classList.contains('show')) {
+        updateDebugPanel();
+      }
+      
+      // Também logar no console
+      if (type === 'error') {
+        console.error(message);
+      } else if (type === 'warn') {
+        console.warn(message);
+      } else {
+        console.log(message);
+      }
+    }
+
+    function updateDebugPanel() {
+      debugPanel.innerHTML = debugLogs.map(log => {
+        return `<div class="log ${log.type}">[${log.time}] ${log.message}</div>`;
+      }).join('');
+      debugPanel.scrollTop = debugPanel.scrollHeight;
+    }
+
+    debugToggle.addEventListener('click', () => {
+      debugPanel.classList.toggle('show');
+      if (debugPanel.classList.contains('show')) {
+        updateDebugPanel();
+        debugToggle.textContent = '✖';
+      } else {
+        debugToggle.textContent = '🔍';
+      }
+    });
+
+    // Interceptar console.log, console.error, console.warn
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      addDebugLog(args.join(' '), 'info');
+    };
+
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      addDebugLog(args.join(' '), 'error');
+    };
+
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      addDebugLog(args.join(' '), 'warn');
+    };
+
     // Debug: Verificar se funções estão disponíveis
     window.addEventListener('load', () => {
-      console.log('🔍 Debug - Verificando funções disponíveis:');
-      console.log('  - startPlayer:', typeof startPlayer);
-      console.log('  - iniciar:', typeof iniciar);
-      console.log('  - entrarFullscreen:', typeof entrarFullscreen);
+      addDebugLog('🔍 Verificando funções disponíveis...', 'info');
+      addDebugLog('  - startPlayer: ' + typeof startPlayer, 'info');
+      addDebugLog('  - iniciar: ' + typeof iniciar, 'info');
+      addDebugLog('  - entrarFullscreen: ' + typeof entrarFullscreen, 'info');
       
       // Verificar se botão existe
       const btnEntrar = document.getElementById("btnEntrar");
-      console.log('  - btnEntrar existe:', !!btnEntrar);
+      addDebugLog('  - btnEntrar existe: ' + !!btnEntrar, btnEntrar ? 'info' : 'error');
       
       if (!btnEntrar) {
-        console.error('❌ Botão btnEntrar não encontrado!');
+        addDebugLog('❌ Botão btnEntrar não encontrado!', 'error');
       }
     });
     
     document.getElementById("btnEntrar").addEventListener("click", () => {
-      console.log('🔘 Botão clicado - chamando startPlayer()');
+      addDebugLog('🔘 Botão clicado - chamando startPlayer()', 'info');
       try {
         if (typeof startPlayer === 'function') {
+          addDebugLog('✅ startPlayer é uma função, chamando...', 'info');
           startPlayer();
+          addDebugLog('✅ startPlayer() chamada com sucesso', 'info');
         } else {
-          console.error('❌ startPlayer não é uma função!', typeof startPlayer);
-          alert('Erro: startPlayer não está disponível. Verifique o console.');
+          const errorMsg = '❌ startPlayer não é uma função! Tipo: ' + typeof startPlayer;
+          addDebugLog(errorMsg, 'error');
+          alert('Erro: startPlayer não está disponível. Tipo: ' + typeof startPlayer + '\n\nVeja o painel de debug (botão 🔍)');
         }
       } catch (error) {
-        console.error('❌ Erro ao chamar startPlayer:', error);
-        alert('Erro: ' + error.message);
+        const errorMsg = '❌ Erro ao chamar startPlayer: ' + error.message;
+        addDebugLog(errorMsg, 'error');
+        addDebugLog('Stack: ' + error.stack, 'error');
+        alert('Erro ao iniciar: ' + error.message + '\n\nVeja o painel de debug (botão 🔍)');
       }
     });
     

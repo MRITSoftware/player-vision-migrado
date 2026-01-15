@@ -944,6 +944,11 @@ async function iniciar() {
   console.log('📡 Status online:', navigator.onLine);
   console.log('🔗 Supabase client:', typeof client !== 'undefined' ? 'disponível' : 'NÃO DISPONÍVEL');
   
+  // Debug temporário: alert no APK para ver se função está sendo chamada
+  if (window.matchMedia('(display-mode: standalone)').matches || document.referrer.includes('android-app://')) {
+    console.log('📱 Detectado APK/PWA - função iniciar() foi chamada');
+  }
+  
   setupOrientationWatcher();
 
   const codigoField = document.getElementById("codigoTela");

@@ -1,4 +1,4 @@
-const config = {
+module.exports = {
   appId: 'com.mritsoftware.player',
   appName: 'MRIT Player',
   webDir: 'dist',
@@ -30,5 +30,3 @@ const config = {
     }
   }
 };
-
-export default config;

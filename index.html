@@ -205,27 +205,22 @@
     const MAX_LOGS = 50;
 
     function addDebugLog(message, type = 'info') {
-      const timestamp = new Date().toLocaleTimeString();
-      const logEntry = { time: timestamp, message, type };
-      debugLogs.push(logEntry);
-      
-      // Limitar quantidade de logs
-      if (debugLogs.length > MAX_LOGS) {
-        debugLogs.shift();
-      }
-      
-      // Atualizar painel se estiver visível
-      if (debugPanel.classList.contains('show')) {
-        updateDebugPanel();
-      }
-      
-      // Também logar no console
-      if (type === 'error') {
-        console.error(message);
-      } else if (type === 'warn') {
-        console.warn(message);
-      } else {
-        console.log(message);
+      try {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = { time: timestamp, message, type };
+        debugLogs.push(logEntry);
+        
+        // Limitar quantidade de logs
+        if (debugLogs.length > MAX_LOGS) {
+          debugLogs.shift();
+        }
+        
+        // Atualizar painel se estiver visível
+        if (debugPanel && debugPanel.classList.contains('show')) {
+          updateDebugPanel();
+        }
+      } catch (e) {
+        // Ignorar erros no debug para não causar loop
       }
     }
 
@@ -246,24 +241,37 @@
       }
     });
 
-    // Interceptar console.log, console.error, console.warn
+    // Interceptar console.log, console.error, console.warn (sem loop)
     const originalLog = console.log;
     const originalError = console.error;
     const originalWarn = console.warn;
+    let isLogging = false; // Flag para evitar loop
 
     console.log = function(...args) {
       originalLog.apply(console, args);
-      addDebugLog(args.join(' '), 'info');
+      if (!isLogging) {
+        isLogging = true;
+        addDebugLog(args.join(' '), 'info');
+        isLogging = false;
+      }
     };
 
     console.error = function(...args) {
       originalError.apply(console, args);
-      addDebugLog(args.join(' '), 'error');
+      if (!isLogging) {
+        isLogging = true;
+        addDebugLog(args.join(' '), 'error');
+        isLogging = false;
+      }
     };
 
     console.warn = function(...args) {
       originalWarn.apply(console, args);
-      addDebugLog(args.join(' '), 'warn');
+      if (!isLogging) {
+        isLogging = true;
+        addDebugLog(args.join(' '), 'warn');
+        isLogging = false;
+      }
     };
 
     // Debug: Verificar se funções estão disponíveis

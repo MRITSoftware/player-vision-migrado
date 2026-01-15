@@ -651,27 +651,56 @@ async function verificarCodigoSalvo() {
               return; // NÃO iniciar automaticamente
             }
             
-            // Se is_locked = true, permite usar (tela física pode continuar)
-            console.log("✅ Display encontrado, is_locked: true, iniciando automaticamente...");
+            // IMPORTANTE: Se encontrou na tabela dispositivos, é o mesmo dispositivo
+            // Mesmo que a tabela displays esteja locked, permitir uso
+            console.log("✅ Dispositivo encontrado na tabela dispositivos - mesmo dispositivo, iniciando automaticamente...");
             
             // Atualizar last_seen e garantir lock
             try {
+              // Atualizar displays com device_id para garantir consistência
               await client
                 .from("displays")
                 .update({ 
                   is_locked: true,
-                  status: "Em uso"
+                  status: "Em uso",
+                  device_id: deviceId,  // Garantir que device_id está correto
+                  device_last_seen: new Date().toISOString()
                 })
                 .eq("codigo_unico", codigoDisplay);
               
               await client
                 .from("dispositivos")
                 .update({ 
-                  last_seen: new Date().toISOString()
+                  last_seen: new Date().toISOString(),
+                  is_ativo: true  // Garantir que está ativo
                 })
                 .eq("device_id", deviceId);
+              
+              console.log("✅ Displays e dispositivos atualizados com device_id:", deviceId);
             } catch (updateErr) {
-              console.warn("⚠️ Erro ao atualizar:", updateErr);
+              // Se campos não existirem, fazer update sem eles
+              if (updateErr.message && updateErr.message.includes('column') && updateErr.message.includes('does not exist')) {
+                try {
+                  await client
+                    .from("displays")
+                    .update({ 
+                      is_locked: true,
+                      status: "Em uso"
+                    })
+                    .eq("codigo_unico", codigoDisplay);
+                  
+                  await client
+                    .from("dispositivos")
+                    .update({ 
+                      is_ativo: true
+                    })
+                    .eq("device_id", deviceId);
+                } catch (err2) {
+                  console.warn("⚠️ Erro ao atualizar displays/dispositivos:", err2);
+                }
+              } else {
+                console.warn("⚠️ Erro ao atualizar:", updateErr);
+              }
             }
             
             // Salvar no localStorage (sincronizar com banco)
@@ -822,22 +851,50 @@ async function verificarCodigoSalvo() {
           }
           
           if (tela) {
-            // Verificar se é o mesmo dispositivo (mesmo device_id)
+            // PRIMEIRO: Verificar na tabela dispositivos se este device_id está usando este código
+            // Isso é mais confiável que a tabela displays para identificar o mesmo dispositivo
+            let mesmoDispositivoNaTabelaDispositivos = false;
+            try {
+              const { data: dispositivoVerificacao } = await client
+                .from("dispositivos")
+                .select("device_id, codigo_display, is_ativo")
+                .eq("device_id", deviceId)
+                .eq("codigo_display", codigoSalvo.trim().toUpperCase())
+                .eq("is_ativo", true)
+                .maybeSingle();
+              
+              if (dispositivoVerificacao) {
+                mesmoDispositivoNaTabelaDispositivos = true;
+                console.log("✅ Mesmo dispositivo confirmado na tabela dispositivos");
+              }
+            } catch (err) {
+              // Se tabela não existir, ignorar
+              if (err.message && err.message.includes('relation') && err.message.includes('does not exist')) {
+                // Tabela não existe - ok
+              } else {
+                console.warn("⚠️ Erro ao verificar na tabela dispositivos:", err);
+              }
+            }
+            
+            // Verificar se é o mesmo dispositivo (mesmo device_id na tabela displays)
             const mesmoDispositivo = tela.device_id && tela.device_id === deviceId;
             
             // Verificar se é um restart (mesmo dispositivo reconectando após restart)
             const isRestarting = sessionStorage.getItem(RESTARTING_KEY) === 'true';
             
-            // Se é restart e há código salvo, assumir que é o mesmo dispositivo mesmo se device_id não bater
-            // (pode ser que o device_id ainda não tenha sido salvo no banco)
-            if (isRestarting && codigoSalvo && codigoSalvo.trim()) {
-              console.log("🔄 Restart detectado com código salvo - assumindo mesmo dispositivo");
-              sessionStorage.removeItem(RESTARTING_KEY); // Limpar flag
+            // Se encontrou na tabela dispositivos OU é restart, assumir que é o mesmo dispositivo
+            if (mesmoDispositivoNaTabelaDispositivos || isRestarting) {
+              console.log("🔄 Mesmo dispositivo confirmado", mesmoDispositivoNaTabelaDispositivos ? "(tabela dispositivos)" : "(restart)");
+              if (isRestarting) {
+                sessionStorage.removeItem(RESTARTING_KEY); // Limpar flag
+              }
             }
             
-            // Permitir se: não está locked OU se está locked mas é o mesmo dispositivo OU se é restart com código salvo
-            if (!tela.is_locked || mesmoDispositivo || (isRestarting && codigoSalvo && codigoSalvo.trim())) {
-              console.log("✅ Código válido", mesmoDispositivo ? "(mesmo dispositivo)" : isRestarting ? "(restart)" : "(não está em uso)", "iniciando automaticamente...");
+            // Permitir se: não está locked OU se está locked mas é o mesmo dispositivo (em qualquer tabela) OU se é restart
+            const podeUsar = !tela.is_locked || mesmoDispositivo || mesmoDispositivoNaTabelaDispositivos || isRestarting;
+            
+            if (podeUsar) {
+              console.log("✅ Código válido", mesmoDispositivo ? "(mesmo dispositivo - displays)" : mesmoDispositivoNaTabelaDispositivos ? "(mesmo dispositivo - dispositivos)" : isRestarting ? "(restart)" : "(não está em uso)", "iniciando automaticamente...");
               
               // Atualizar device_id e last_seen (garantir que está correto após restart)
               try {

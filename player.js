@@ -1064,6 +1064,34 @@ async function iniciar() {
   }
   
   // Se chegou aqui, código está livre ou é o mesmo dispositivo - pode continuar
+  
+  // IMPORTANTE: Se estava usando outro código, limpar o código antigo ANTES de salvar o novo
+  const codigoAnterior = codigoAtual;
+  if (codigoAnterior && codigoAnterior !== codigo) {
+    console.log("🔄 Troca de código detectada:", codigoAnterior, "→", codigo);
+    console.log("🗑️ Limpando código anterior do localStorage...");
+    
+    // Limpar localStorage do código anterior
+    localStorage.removeItem(CODIGO_DISPLAY_KEY);
+    localStorage.removeItem(LOCAL_TELA_KEY);
+    
+    // Limpar cache do namespace do código anterior
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ action: "clearNamespace" });
+    }
+    
+    // Desbloquear display anterior
+    try {
+      await client
+        .from("displays")
+        .update({ is_locked: false, status: "Disponível" })
+        .eq("codigo_unico", codigoAnterior);
+      console.log("✅ Display anterior desbloqueado:", codigoAnterior);
+    } catch (err) {
+      console.warn("⚠️ Erro ao desbloquear display anterior:", err);
+    }
+  }
+  
   codigoAtual = codigo;
   
   // Salvar código e local no localStorage para uso futuro
@@ -1228,14 +1256,15 @@ async function iniciar() {
     }
     
     // Também atualizar displays (método antigo - retrocompatibilidade)
+    // IMPORTANTE: NÃO atualizar device_id aqui - ele é único por dispositivo físico e não muda quando troca de código
+    // O device_id na tabela displays é apenas informativo e não deve ser atualizado ao trocar de código
     try {
-      const deviceId = gerarDeviceId();
       try {
         const { error } = await client
           .from("displays")
           .update({ 
-            device_id: deviceId,
             device_last_seen: new Date().toISOString()
+            // device_id NÃO é atualizado aqui - ele é único por dispositivo físico
           })
           .eq("codigo_unico", codigo);
         
@@ -1243,14 +1272,14 @@ async function iniciar() {
           if (error.message && error.message.includes('column') && error.message.includes('does not exist')) {
             // Campos não existem - ok
           } else {
-            console.warn("⚠️ Erro ao salvar device_id no displays:", error);
+            console.warn("⚠️ Erro ao atualizar displays:", error);
           }
         }
       } catch (updateErr) {
         if (updateErr.message && updateErr.message.includes('column') && updateErr.message.includes('does not exist')) {
           // Campos não existem - ok
         } else {
-          console.warn("⚠️ Erro ao vincular dispositivo:", updateErr);
+          console.warn("⚠️ Erro ao atualizar displays:", updateErr);
         }
       }
     } catch (err) {
@@ -1318,13 +1347,27 @@ async function iniciar() {
       return;
     }
 
-    // Atualizar: lock, device_id e status
+    // Atualizar: lock e status
+    // IMPORTANTE: device_id só é atualizado na primeira vez que o dispositivo usa um código
+    // Se o device_id já existe e é diferente, significa que outro dispositivo está usando
+    // Não atualizamos device_id aqui para manter a integridade - ele é único por dispositivo físico
     const updateData = { 
       is_locked: true, 
       status: "Em uso",
-      device_id: deviceId,
       device_last_seen: new Date().toISOString()
     };
+    
+    // Só atualizar device_id se ainda não estiver definido (primeira vez)
+    if (!tela.device_id) {
+      updateData.device_id = deviceId;
+      console.log("🆔 Definindo device_id pela primeira vez para este código:", deviceId);
+    } else if (tela.device_id === deviceId) {
+      // Mesmo dispositivo - pode atualizar device_id para atualizar last_seen
+      updateData.device_id = deviceId;
+    } else {
+      // Device_id diferente - não atualizar (outro dispositivo está usando)
+      console.log("⚠️ Device_id diferente detectado - não atualizando:", tela.device_id, "vs", deviceId);
+    }
     
     try {
       await client
@@ -2213,9 +2256,19 @@ function hasEnoughBuffer(videoEl, minSeconds) {
   if (!videoEl.buffered || !videoEl.buffered.length) return false;
   if (!videoEl.duration || !isFinite(videoEl.duration)) return false;
   
+  // Se o vídeo é mais curto que o buffer mínimo, aceita se tiver carregado completamente
+  if (videoEl.duration < minSeconds) {
+    return videoEl.readyState >= 3; // Aceita se já pode tocar
+  }
+  
   const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
   const currentTime = videoEl.currentTime || 0;
   const bufferedSeconds = bufferedEnd - currentTime;
+  
+  // Para vídeos curtos, aceita se tiver pelo menos 80% do vídeo em buffer
+  if (videoEl.duration <= minSeconds * 1.5) {
+    return bufferedSeconds >= (videoEl.duration * 0.8);
+  }
   
   return bufferedSeconds >= minSeconds;
 }
@@ -2248,15 +2301,23 @@ function waitForBuffer(videoEl, minBufferSeconds, timeoutMs = 15000) {
     const checkBuffer = () => {
       if (done) return;
       
-      if (hasEnoughBuffer(videoEl, minBufferSeconds)) {
+      // Se o vídeo já carregou completamente, aceita imediatamente
+      if (videoEl.readyState >= 4) {
         done = true;
         cleanup();
         resolve(true);
         return;
       }
       
-      // Se o vídeo já carregou completamente, aceita mesmo sem buffer mínimo
-      if (videoEl.readyState >= 4) {
+      // Para vídeos muito curtos (menos que o buffer mínimo), aceita se readyState >= 3
+      if (videoEl.duration && videoEl.duration < minBufferSeconds && videoEl.readyState >= 3) {
+        done = true;
+        cleanup();
+        resolve(true);
+        return;
+      }
+      
+      if (hasEnoughBuffer(videoEl, minBufferSeconds)) {
         done = true;
         cleanup();
         resolve(true);
@@ -2708,7 +2769,19 @@ function subscribeDispositivosChannel() {
               console.warn("⚠️ Erro ao bloquear novo display:", err);
             }
             
-            // Atualizar localStorage
+            // IMPORTANTE: Limpar código anterior ANTES de salvar o novo
+            if (codigoAntigo && codigoAntigo !== novoCodigo) {
+              console.log("🗑️ Limpando código anterior do localStorage:", codigoAntigo);
+              localStorage.removeItem(CODIGO_DISPLAY_KEY);
+              localStorage.removeItem(LOCAL_TELA_KEY);
+              
+              // Limpar cache do namespace do código anterior
+              if (navigator.serviceWorker?.controller) {
+                navigator.serviceWorker.controller.postMessage({ action: "clearNamespace" });
+              }
+            }
+            
+            // Atualizar localStorage com novo código
             localStorage.setItem(CODIGO_DISPLAY_KEY, novoCodigo);
             if (payload.new.local_nome) {
               localStorage.setItem(LOCAL_TELA_KEY, payload.new.local_nome);
@@ -2821,7 +2894,19 @@ async function verificarMudancaDispositivo() {
         console.warn("⚠️ Erro ao bloquear novo display:", err);
       }
       
-      // Atualizar localStorage
+      // IMPORTANTE: Limpar código anterior ANTES de salvar o novo
+      if (codigoAntigo && codigoAntigo !== novoCodigo) {
+        console.log("🗑️ Limpando código anterior do localStorage:", codigoAntigo);
+        localStorage.removeItem(CODIGO_DISPLAY_KEY);
+        localStorage.removeItem(LOCAL_TELA_KEY);
+        
+        // Limpar cache do namespace do código anterior
+        if (navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.controller.postMessage({ action: "clearNamespace" });
+        }
+      }
+      
+      // Atualizar localStorage com novo código
       localStorage.setItem(CODIGO_DISPLAY_KEY, novoCodigo);
       if (dispositivo.local_nome) {
         localStorage.setItem(LOCAL_TELA_KEY, dispositivo.local_nome);

@@ -5,15 +5,12 @@
   'use strict';
   
   // Verificar se Capacitor está disponível (só funciona no APK, não no navegador)
-  let Capacitor, KeepAwake, StatusBar, SplashScreen;
+  let Capacitor, StatusBar, SplashScreen;
   let isNative = false;
 
   try {
     const capacitorCore = await import('@capacitor/core');
     Capacitor = capacitorCore.Capacitor;
-    
-    const keepAwakeModule = await import('@capacitor-community/keep-awake');
-    KeepAwake = keepAwakeModule.KeepAwake;
     
     const statusBarModule = await import('@capacitor/status-bar');
     StatusBar = statusBarModule.StatusBar;
@@ -30,14 +27,12 @@
   }
 
   // Função para manter tela ligada (24h)
+  // No APK, o MainActivity.java já mantém a tela ligada com FLAG_KEEP_SCREEN_ON
+  // Aqui usamos Wake Lock API apenas como fallback para navegador
   async function manterTelaLigada() {
-    if (isNative && KeepAwake) {
-      try {
-        await KeepAwake.keepAwake();
-        console.log('✅ Tela será mantida ligada (Keep Awake ativado)');
-      } catch (error) {
-        console.error('❌ Erro ao ativar Keep Awake:', error);
-      }
+    if (isNative) {
+      // No APK, o MainActivity.java já mantém a tela ligada nativamente
+      console.log('✅ Tela será mantida ligada (via MainActivity.java - FLAG_KEEP_SCREEN_ON)');
     } else {
       // Fallback para navegador: usar Wake Lock API
       if ('wakeLock' in navigator) {

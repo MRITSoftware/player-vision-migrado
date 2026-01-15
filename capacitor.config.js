@@ -27,9 +27,6 @@ const config = {
       style: "DARK",
       backgroundColor: "#000000",
       overlaysWebView: true
-    },
-    KeepAwake: {
-      keepAwake: true
     }
   }
 };

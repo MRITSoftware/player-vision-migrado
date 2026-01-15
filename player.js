@@ -60,11 +60,14 @@ const DEVICE_ID_KEY = 'mrit_device_id';
 const RESTARTING_KEY = 'mrit_is_restarting'; // sessionStorage - indica que está reiniciando
 
 // ===== Gerar ID único do dispositivo =====
+// IMPORTANTE: O device_id deve ser PERSISTENTE e ÚNICO por dispositivo físico
+// NÃO deve mudar mesmo após reinstalar o app ou limpar cache
 function gerarDeviceId() {
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
   
   if (!deviceId) {
-    // Gerar um ID único baseado em características do navegador
+    // Gerar um ID único baseado em características do dispositivo
+    // NÃO usar Date.now() para garantir que seja sempre o mesmo
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     ctx.textBaseline = 'top';
@@ -72,15 +75,18 @@ function gerarDeviceId() {
     ctx.textBaseline = 'alphabetic';
     ctx.fillText('Device fingerprint', 2, 2);
     
+    // Fingerprint baseado em características permanentes do dispositivo
     const fingerprint = [
       navigator.userAgent,
       navigator.language,
       screen.width + 'x' + screen.height,
       new Date().getTimezoneOffset(),
+      navigator.hardwareConcurrency || '0',
+      navigator.deviceMemory || '0',
       canvas.toDataURL()
     ].join('|');
     
-    // Criar hash simples do fingerprint
+    // Criar hash simples do fingerprint (sem timestamp)
     let hash = 0;
     for (let i = 0; i < fingerprint.length; i++) {
       const char = fingerprint.charCodeAt(i);
@@ -88,9 +94,12 @@ function gerarDeviceId() {
       hash = hash & hash; // Convert to 32bit integer
     }
     
-    deviceId = 'device_' + Math.abs(hash).toString(36) + '_' + Date.now().toString(36);
+    // Gerar ID baseado apenas no hash (SEM Date.now() para garantir persistência)
+    deviceId = 'device_' + Math.abs(hash).toString(36);
     localStorage.setItem(DEVICE_ID_KEY, deviceId);
-    console.log("🆔 Novo ID de dispositivo gerado:", deviceId);
+    console.log("🆔 Novo ID de dispositivo gerado (persistente):", deviceId);
+  } else {
+    console.log("🆔 Device ID existente (persistente):", deviceId);
   }
   
   return deviceId;
@@ -816,21 +825,32 @@ async function verificarCodigoSalvo() {
             // Verificar se é o mesmo dispositivo (mesmo device_id)
             const mesmoDispositivo = tela.device_id && tela.device_id === deviceId;
             
-            // Permitir se: não está locked OU se está locked mas é o mesmo dispositivo
-            if (!tela.is_locked || mesmoDispositivo) {
-              console.log("✅ Código válido", mesmoDispositivo ? "(mesmo dispositivo)" : "(não está em uso)", "iniciando automaticamente...");
+            // Verificar se é um restart (mesmo dispositivo reconectando após restart)
+            const isRestarting = sessionStorage.getItem(RESTARTING_KEY) === 'true';
+            
+            // Se é restart e há código salvo, assumir que é o mesmo dispositivo mesmo se device_id não bater
+            // (pode ser que o device_id ainda não tenha sido salvo no banco)
+            if (isRestarting && codigoSalvo && codigoSalvo.trim()) {
+              console.log("🔄 Restart detectado com código salvo - assumindo mesmo dispositivo");
+              sessionStorage.removeItem(RESTARTING_KEY); // Limpar flag
+            }
+            
+            // Permitir se: não está locked OU se está locked mas é o mesmo dispositivo OU se é restart com código salvo
+            if (!tela.is_locked || mesmoDispositivo || (isRestarting && codigoSalvo && codigoSalvo.trim())) {
+              console.log("✅ Código válido", mesmoDispositivo ? "(mesmo dispositivo)" : isRestarting ? "(restart)" : "(não está em uso)", "iniciando automaticamente...");
               
-              // Atualizar device_id e last_seen
+              // Atualizar device_id e last_seen (garantir que está correto após restart)
               try {
                 await client
                   .from("displays")
                   .update({ 
-                    device_id: deviceId,
+                    device_id: deviceId,  // Sempre atualizar para garantir que está correto
                     device_last_seen: new Date().toISOString(),
                     is_locked: true,  // Garantir que está locked
                     status: "Em uso"
                   })
                   .eq("codigo_unico", codigoSalvo.trim().toUpperCase());
+                console.log("✅ Display atualizado após restart/reconexão");
               } catch (updateErr) {
                 // Ignorar erros silenciosamente se campos não existirem
                 if (updateErr.message && updateErr.message.includes('column') && updateErr.message.includes('does not exist')) {

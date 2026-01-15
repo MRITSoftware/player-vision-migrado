@@ -57,6 +57,7 @@ const img = document.getElementById("imgPlayer");
 const CODIGO_DISPLAY_KEY = 'mrit_display_codigo';
 const LOCAL_TELA_KEY = 'mrit_local_tela';
 const DEVICE_ID_KEY = 'mrit_device_id';
+const RESTARTING_KEY = 'mrit_is_restarting'; // sessionStorage - indica que está reiniciando
 
 // ===== Gerar ID único do dispositivo =====
 function gerarDeviceId() {
@@ -1339,8 +1340,17 @@ async function iniciar() {
     // Verificar se é o mesmo dispositivo
     const mesmoDispositivo = tela.device_id && tela.device_id === deviceId;
     
+    // Verificar se é um restart (mesmo dispositivo reconectando)
+    const isRestarting = sessionStorage.getItem(RESTARTING_KEY) === 'true';
+    
+    // Se é restart e é o mesmo dispositivo, permitir reconexão mesmo se locked
+    if (isRestarting && mesmoDispositivo) {
+      console.log("🔄 Restart detectado - mesmo dispositivo reconectando");
+      sessionStorage.removeItem(RESTARTING_KEY); // Limpar flag
+    }
+    
     // Verificar se a tela está locked - se estiver E não for o mesmo dispositivo, não permitir
-    if (tela.is_locked && !mesmoDispositivo) {
+    if (tela.is_locked && !mesmoDispositivo && !isRestarting) {
       showNotification("Tela já em uso por outro dispositivo! Por favor, insira outro código.");
       clearCodeField();
       ensureElementsVisible();
@@ -1357,13 +1367,16 @@ async function iniciar() {
       device_last_seen: new Date().toISOString()
     };
     
-    // Só atualizar device_id se ainda não estiver definido (primeira vez)
+    // Só atualizar device_id se ainda não estiver definido (primeira vez) OU se for o mesmo dispositivo
     if (!tela.device_id) {
       updateData.device_id = deviceId;
       console.log("🆔 Definindo device_id pela primeira vez para este código:", deviceId);
-    } else if (tela.device_id === deviceId) {
+    } else if (tela.device_id === deviceId || (isRestarting && mesmoDispositivo)) {
       // Mesmo dispositivo - pode atualizar device_id para atualizar last_seen
       updateData.device_id = deviceId;
+      if (isRestarting) {
+        console.log("🔄 Atualizando device_id após restart:", deviceId);
+      }
     } else {
       // Device_id diferente - não atualizar (outro dispositivo está usando)
       console.log("⚠️ Device_id diferente detectado - não atualizando:", tela.device_id, "vs", deviceId);
@@ -3275,7 +3288,79 @@ async function checarLockEConteudo() {
 
     // Verificar promoção continuamente
     await verificarPromocaoContinuamente();
+    
+    // Verificar comandos device_commands
+    await verificarComandosDispositivo();
   } catch {}
+}
+
+// ===== Verificar comandos do dispositivo =====
+async function verificarComandosDispositivo() {
+  if (!navigator.onLine || !codigoAtual) return;
+  
+  try {
+    const deviceId = gerarDeviceId();
+    
+    // Buscar comandos pendentes para este dispositivo
+    const { data: comandos, error } = await client
+      .from("device_commands")
+      .select("id, command, executed")
+      .eq("device_id", deviceId)
+      .eq("executed", false)
+      .order("created_at", { ascending: true })
+      .limit(10);
+    
+    if (error) {
+      // Se tabela não existir, ignorar (retrocompatibilidade)
+      if (error.message && error.message.includes('relation') && error.message.includes('does not exist')) {
+        return;
+      }
+      console.warn("⚠️ Erro ao verificar comandos:", error);
+      return;
+    }
+    
+    if (!comandos || comandos.length === 0) return;
+    
+    // Processar cada comando
+    for (const comando of comandos) {
+      try {
+        console.log("📨 Processando comando:", comando.command, "para device:", deviceId);
+        
+        if (comando.command === 'restart_app') {
+          // Marcar como restart antes de recarregar
+          sessionStorage.setItem(RESTARTING_KEY, 'true');
+          
+          // Marcar comando como executado
+          await client
+            .from("device_commands")
+            .update({ executed: true, executed_at: new Date().toISOString() })
+            .eq("id", comando.id);
+          
+          console.log("🔄 Reiniciando app...");
+          
+          // Aguardar um pouco para garantir que o sessionStorage foi salvo
+          setTimeout(() => {
+            location.reload();
+          }, 500);
+          
+          return; // Sair após processar restart
+        } else {
+          // Outros comandos podem ser adicionados aqui
+          console.log("ℹ️ Comando não implementado:", comando.command);
+          
+          // Marcar como executado mesmo assim (para não ficar pendente)
+          await client
+            .from("device_commands")
+            .update({ executed: true, executed_at: new Date().toISOString() })
+            .eq("id", comando.id);
+        }
+      } catch (err) {
+        console.error("❌ Erro ao processar comando:", err);
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ Erro ao verificar comandos do dispositivo:", err);
+  }
 }
 
 // ===== Service Worker =====
@@ -3442,6 +3527,21 @@ setInterval(async () => {
 window.addEventListener("beforeunload", () => {
   if (!codigoAtual) return;
 
+  // Verificar se é um restart (não limpar dados se for restart)
+  const isRestarting = sessionStorage.getItem(RESTARTING_KEY) === 'true';
+  
+  if (isRestarting) {
+    console.log("🔄 Reiniciando app - mantendo dados salvos");
+    // Não limpar localStorage - manter código salvo para reconexão
+    // Não desbloquear display - manter locked para o mesmo dispositivo
+    // Apenas limpar flag de restart
+    sessionStorage.removeItem(RESTARTING_KEY);
+    return;
+  }
+
+  // Se não é restart, limpar normalmente
+  console.log("🚪 Fechando app - limpando dados");
+  
   // limpa cache do namespace desta tela
   navigator.serviceWorker.controller?.postMessage({ action: "clearNamespace" });
 

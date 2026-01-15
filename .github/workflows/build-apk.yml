@@ -36,8 +36,8 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
-        api-level: 33
-        build-tools: 33.0.0
+        packages: platform-tools android-33 build-tools;33.0.0
+        accept-android-sdk-licenses: true
         
     - name: Instalar Capacitor CLI
       run: npm install -g @capacitor/cli

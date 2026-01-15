@@ -6,6 +6,9 @@ node_modules/
 # Build outputs
 dist/
 build/
+
+# Android (gerado pelo Capacitor - não commitar)
+android/
 *.apk
 *.aab
 

@@ -103,12 +103,40 @@ document.addEventListener('DOMContentLoaded', function() {
   const codigoLocal = localStorage.getItem(CODIGO_DISPLAY_KEY);
   const localLocal = localStorage.getItem(LOCAL_TELA_KEY);
   
-  // Se há código salvo, FORÇAR fullscreen imediatamente
+  // Se há código salvo, esconder tela de login IMEDIATAMENTE e FORÇAR fullscreen
   if (codigoLocal && codigoLocal.trim() && localLocal && localLocal.trim()) {
-    console.log("🔒 Código salvo detectado no carregamento - FORÇANDO fullscreen");
-    setTimeout(() => entrarFullscreen(), 100);
-    setTimeout(() => entrarFullscreen(), 400);
-    setTimeout(() => entrarFullscreen(), 800);
+    console.log("🔒 Código salvo detectado no carregamento - Escondendo login e FORÇANDO fullscreen");
+    
+    // Esconder elementos de login IMEDIATAMENTE (sem delay para não aparecer brevemente)
+    const inputDiv = document.getElementById("codigoInput");
+    const rodape = document.getElementById("rodape");
+    const logo = document.getElementById("logo");
+    if (inputDiv) {
+      inputDiv.style.display = "none";
+      inputDiv.style.opacity = "0";
+      inputDiv.style.visibility = "hidden";
+    }
+    if (rodape) {
+      rodape.style.display = "none";
+      rodape.style.opacity = "0";
+      rodape.style.visibility = "hidden";
+    }
+    if (logo) {
+      logo.style.display = "none";
+      logo.style.opacity = "0";
+      logo.style.visibility = "hidden";
+    }
+    
+    // Tentar fullscreen imediatamente
+    setTimeout(() => {
+      entrarFullscreen();
+    }, 100);
+    setTimeout(() => {
+      entrarFullscreen();
+    }, 400);
+    setTimeout(() => {
+      entrarFullscreen();
+    }, 800);
   }
   
   // Tentar entrar em fullscreen imediatamente se for PWA instalado
@@ -122,39 +150,21 @@ document.addEventListener('DOMContentLoaded', function() {
   // Verificar se já existe um código salvo e iniciar automaticamente
   verificarCodigoSalvo();
   
-  // Monitorar mudanças no fullscreen e tentar reativar automaticamente se sair
+  // Listener para mudanças no fullscreen - usar novo sistema de monitoramento
   const verificarFullscreenEreativar = () => {
     const codigoSalvo = localStorage.getItem(CODIGO_DISPLAY_KEY);
     const localSalvo = localStorage.getItem(LOCAL_TELA_KEY);
     const temCodigoCompleto = codigoSalvo && codigoSalvo.trim() && localSalvo && localSalvo.trim();
     
-    if (temCodigoCompleto) {
-      const jaEstaFullscreen = document.fullscreenElement || 
-                                document.webkitFullscreenElement || 
-                                document.mozFullScreenElement || 
-                                document.msFullscreenElement;
-      
-      if (!jaEstaFullscreen) {
-        console.log("🔒 Fullscreen foi desativado - tentando reativar automaticamente...");
-        // Forçar foco antes de cada tentativa
-        forcarFocoNoPlayer();
-        setTimeout(() => {
-          forcarFocoNoPlayer();
-          entrarFullscreen();
-        }, 300);
-        setTimeout(() => {
-          forcarFocoNoPlayer();
-          entrarFullscreen();
-        }, 800);
-        setTimeout(() => {
-          forcarFocoNoPlayer();
-          entrarFullscreen();
-        }, 1500);
-        setTimeout(() => {
-          forcarFocoNoPlayer();
-          entrarFullscreen();
-        }, 2500);
+    // Só tentar reativar se tiver código salvo E o player estiver ativo
+    if (temCodigoCompleto && isPlayerAtivo()) {
+      if (!isFullscreen()) {
+        // Tentar reativar imediatamente
+        entrarFullscreen();
       }
+    } else {
+      // Se não tem código ou player não está ativo, parar monitoramento
+      stopFullscreenMonitoring();
     }
   };
   
@@ -170,26 +180,29 @@ document.addEventListener('DOMContentLoaded', function() {
   // Listener para mudanças no fullscreen (IE/Edge)
   document.addEventListener('MSFullscreenChange', verificarFullscreenEreativar);
   
-  // Monitorar periodicamente se saiu do fullscreen (fallback adicional)
-  setInterval(() => {
+  // Listener para quando a página ganha foco (ao voltar para a aba)
+  window.addEventListener('focus', () => {
     const codigoSalvo = localStorage.getItem(CODIGO_DISPLAY_KEY);
     const localSalvo = localStorage.getItem(LOCAL_TELA_KEY);
     const temCodigoCompleto = codigoSalvo && codigoSalvo.trim() && localSalvo && localSalvo.trim();
     
-    if (temCodigoCompleto) {
-      const jaEstaFullscreen = document.fullscreenElement || 
-                                document.webkitFullscreenElement || 
-                                document.mozFullScreenElement || 
-                                document.msFullscreenElement;
+    if (temCodigoCompleto && isPlayerAtivo()) {
+      setTimeout(() => entrarFullscreen(), 100);
+    }
+  });
+  
+  // Listener para quando a página fica visível (ao voltar do background)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      const codigoSalvo = localStorage.getItem(CODIGO_DISPLAY_KEY);
+      const localSalvo = localStorage.getItem(LOCAL_TELA_KEY);
+      const temCodigoCompleto = codigoSalvo && codigoSalvo.trim() && localSalvo && localSalvo.trim();
       
-      if (!jaEstaFullscreen) {
-        // Tentar reativar a cada 5 segundos se não estiver em fullscreen
-        // Forçar foco antes de tentar
-        forcarFocoNoPlayer();
-        entrarFullscreen();
+      if (temCodigoCompleto && isPlayerAtivo()) {
+        setTimeout(() => entrarFullscreen(), 100);
       }
     }
-  }, 5000); // Verificar a cada 5 segundos
+  });
 });
 
 // ===== Sistema de Notificações =====
@@ -656,40 +669,74 @@ async function verificarCodigoSalvo() {
             if (localNome) localStorage.setItem(LOCAL_TELA_KEY, localNome);
             console.log("💾 Código e local salvos no localStorage:", codigoDisplay, localNome);
             
-            // Esconder elementos de login
+            // Esconder elementos de login IMEDIATAMENTE (sem delay para não aparecer brevemente)
             const inputDiv = document.getElementById("codigoInput");
             const rodape = document.getElementById("rodape");
             const logo = document.getElementById("logo");
             if (inputDiv) {
-              inputDiv.classList.add("fade-out");
-              setTimeout(() => { inputDiv.style.display = "none"; }, 500);
+              inputDiv.style.display = "none";
+              inputDiv.style.opacity = "0";
+              inputDiv.style.visibility = "hidden";
             }
             if (rodape) {
-              rodape.classList.add("fade-out");
-              setTimeout(() => { rodape.style.display = "none"; }, 500);
+              rodape.style.display = "none";
+              rodape.style.opacity = "0";
+              rodape.style.visibility = "hidden";
             }
             if (logo) {
-              logo.classList.add("fade-out");
-              setTimeout(() => { logo.style.display = "none"; }, 500);
+              logo.style.display = "none";
+              logo.style.opacity = "0";
+              logo.style.visibility = "hidden";
             }
             
-            // FORÇAR fullscreen imediatamente (código salvo = obrigatório fullscreen)
+            // FORÇAR fullscreen IMEDIATAMENTE (código salvo = obrigatório fullscreen)
             console.log("🔒 Código e local salvos detectados - FORÇANDO fullscreen obrigatório");
-            entrarFullscreen(); // Imediato
-            setTimeout(() => entrarFullscreen(), 200);
-            setTimeout(() => entrarFullscreen(), 500);
-            setTimeout(() => entrarFullscreen(), 1000);
             
-            // Iniciar automaticamente
+            // Tentar fullscreen imediatamente
+            entrarFullscreen();
+            
+            // Múltiplas tentativas de fullscreen
+            setTimeout(() => {
+              entrarFullscreen();
+            }, 100);
+            setTimeout(() => {
+              entrarFullscreen();
+            }, 300);
+            setTimeout(() => {
+              entrarFullscreen();
+            }, 600);
+            
+            // Iniciar automaticamente (após garantir que elementos estão escondidos)
             setTimeout(() => {
               startPlayer();
-            }, 1000);
+            }, 500);
             
-            // Continuar tentando fullscreen após iniciar (múltiplas tentativas)
-            setTimeout(() => entrarFullscreen(), 1500);
-            setTimeout(() => entrarFullscreen(), 2500);
-            setTimeout(() => entrarFullscreen(), 4000);
-            setTimeout(() => entrarFullscreen(), 6000);
+            // Continuar tentando fullscreen após iniciar
+            setTimeout(() => {
+              if (isPlayerAtivo()) {
+                entrarFullscreen();
+              }
+            }, 1000);
+            setTimeout(() => {
+              if (isPlayerAtivo()) {
+                entrarFullscreen();
+              }
+            }, 2000);
+            setTimeout(() => {
+              if (isPlayerAtivo()) {
+                entrarFullscreen();
+              }
+            }, 3500);
+            setTimeout(() => {
+              if (isPlayerAtivo()) {
+                entrarFullscreen();
+              }
+            }, 5000);
+            setTimeout(() => {
+              if (isPlayerAtivo()) {
+                entrarFullscreen();
+              }
+            }, 7000);
             return;
           } else {
             console.log("❌ Display não encontrado, limpar dispositivo");
@@ -725,9 +772,23 @@ async function verificarCodigoSalvo() {
       
       // FORÇAR fullscreen se há código salvo (obrigatório)
       console.log("🔒 Código salvo detectado - FORÇANDO fullscreen obrigatório");
-      setTimeout(() => entrarFullscreen(), 200);
-      setTimeout(() => entrarFullscreen(), 800);
-      setTimeout(() => entrarFullscreen(), 1500);
+      
+      // Tentar fullscreen imediatamente (mas só se player estiver ativo depois)
+      setTimeout(() => {
+        if (isPlayerAtivo()) {
+          entrarFullscreen();
+        }
+      }, 200);
+      setTimeout(() => {
+        if (isPlayerAtivo()) {
+          entrarFullscreen();
+        }
+      }, 800);
+      setTimeout(() => {
+        if (isPlayerAtivo()) {
+          entrarFullscreen();
+        }
+      }, 1500);
       
       // Verificar se o código ainda é válido no banco
       if (navigator.onLine) {
@@ -778,20 +839,69 @@ async function verificarCodigoSalvo() {
                 }
               }
               
-              // FORÇAR fullscreen antes de iniciar (código salvo = obrigatório)
-              console.log("🔒 Código válido detectado - FORÇANDO fullscreen obrigatório");
-              entrarFullscreen(); // Imediato
-              setTimeout(() => entrarFullscreen(), 200);
-              setTimeout(() => entrarFullscreen(), 500);
+              // Esconder elementos de login IMEDIATAMENTE (sem delay para não aparecer brevemente)
+              const inputDiv = document.getElementById("codigoInput");
+              const rodape = document.getElementById("rodape");
+              const logo = document.getElementById("logo");
+              if (inputDiv) {
+                inputDiv.style.display = "none";
+                inputDiv.style.opacity = "0";
+                inputDiv.style.visibility = "hidden";
+              }
+              if (rodape) {
+                rodape.style.display = "none";
+                rodape.style.opacity = "0";
+                rodape.style.visibility = "hidden";
+              }
+              if (logo) {
+                logo.style.display = "none";
+                logo.style.opacity = "0";
+                logo.style.visibility = "hidden";
+              }
               
+              // FORÇAR fullscreen IMEDIATAMENTE (código salvo = obrigatório fullscreen)
+              console.log("🔒 Código válido detectado - FORÇANDO fullscreen obrigatório");
+              
+              // Tentar fullscreen imediatamente
+              entrarFullscreen();
+              
+              // Múltiplas tentativas de fullscreen
+              setTimeout(() => {
+                entrarFullscreen();
+              }, 100);
+              setTimeout(() => {
+                entrarFullscreen();
+              }, 300);
+              setTimeout(() => {
+                entrarFullscreen();
+              }, 600);
+              
+              // Iniciar automaticamente (após garantir que elementos estão escondidos)
               setTimeout(() => {
                 startPlayer();
-              }, 1000);
+              }, 500);
               
               // Continuar tentando fullscreen após iniciar
-              setTimeout(() => entrarFullscreen(), 1500);
-              setTimeout(() => entrarFullscreen(), 2500);
-              setTimeout(() => entrarFullscreen(), 4000);
+              setTimeout(() => {
+                if (isPlayerAtivo()) {
+                  entrarFullscreen();
+                }
+              }, 1000);
+              setTimeout(() => {
+                if (isPlayerAtivo()) {
+                  entrarFullscreen();
+                }
+              }, 2000);
+              setTimeout(() => {
+                if (isPlayerAtivo()) {
+                  entrarFullscreen();
+                }
+              }, 3500);
+              setTimeout(() => {
+                if (isPlayerAtivo()) {
+                  entrarFullscreen();
+                }
+              }, 5000);
               return;
             } else {
               // Está locked E não é o mesmo dispositivo
@@ -940,6 +1050,17 @@ async function iniciar() {
   localStorage.setItem(CODIGO_DISPLAY_KEY, codigo);
   localStorage.setItem(LOCAL_TELA_KEY, local);
   console.log("💾 Código e local salvos no localStorage:", codigo, local);
+  
+  // FORÇAR fullscreen imediatamente após salvar código
+  console.log("🔒 Código salvo - FORÇANDO fullscreen automático");
+  entrarFullscreen();
+  
+  // Múltiplas tentativas agressivas de fullscreen
+  setTimeout(() => entrarFullscreen(), 100);
+  setTimeout(() => entrarFullscreen(), 300);
+  setTimeout(() => entrarFullscreen(), 600);
+  setTimeout(() => entrarFullscreen(), 1000);
+  setTimeout(() => entrarFullscreen(), 2000);
   
   // Salvar na tabela dispositivos (nova tabela)
   if (navigator.onLine) {
@@ -1202,8 +1323,13 @@ async function iniciar() {
       }
     }
 
-    // Entrar em fullscreen apenas após validação bem-sucedida
+    // FORÇAR fullscreen após validação bem-sucedida (múltiplas tentativas)
+    entrarFullscreen();
+    setTimeout(() => entrarFullscreen(), 200);
     setTimeout(() => entrarFullscreen(), 500);
+    setTimeout(() => entrarFullscreen(), 1000);
+    setTimeout(() => entrarFullscreen(), 2000);
+    setTimeout(() => entrarFullscreen(), 3500);
 
     // Animar saída dos elementos da interface
     const inputDiv = document.getElementById("codigoInput");
@@ -2564,8 +2690,14 @@ function subscribeDispositivosChannel() {
         if (status === 'SUBSCRIBED') {
           console.log("✅ Realtime conectado - dispositivos (SUBSCRIBED)");
         } else if (status === 'CHANNEL_ERROR') {
-          console.error("❌ Erro no channel de dispositivos:", status);
-        } else {
+          // Reduzir spam de logs - só logar uma vez a cada 10 segundos
+          const now = Date.now();
+          if (!window.lastRealtimeErrorLog || (now - window.lastRealtimeErrorLog) > 10000) {
+            console.warn("⚠️ Erro no channel de dispositivos (usando fallback de polling):", status);
+            window.lastRealtimeErrorLog = now;
+          }
+        } else if (status !== 'TIMED_OUT') {
+          // Não logar TIMED_OUT para reduzir spam
           console.log("📡 Status do channel de dispositivos:", status);
         }
       });
@@ -2717,57 +2849,82 @@ async function pararTudoMostrarLogin() {
   }
 }
 
-// ===== Função para forçar foco no player =====
-function forcarFocoNoPlayer() {
-  try {
-    // Tentar focar no vídeo primeiro
-    const video = document.getElementById("videoPlayer");
-    if (video && video.style.display !== 'none') {
-      video.focus();
-      // Adicionar tabIndex temporariamente se não tiver (para permitir foco)
-      if (!video.hasAttribute('tabindex')) {
-        video.setAttribute('tabindex', '-1');
-      }
+// ===== Função para verificar se o player está ativo (não está na tela de login) =====
+function isPlayerAtivo() {
+  const codigoInput = document.getElementById("codigoInput");
+  const video = document.getElementById("videoPlayer");
+  const img = document.getElementById("imgPlayer");
+  
+  // Se o campo de código está visível, o player NÃO está ativo
+  if (codigoInput) {
+    const estaVisivel = codigoInput.style.display !== 'none' && !codigoInput.classList.contains('fade-out');
+    if (estaVisivel) {
+      return false;
     }
-    
-    // Tentar focar na imagem se vídeo não estiver visível
-    const img = document.getElementById("imgPlayer");
-    if (img && img.style.display !== 'none') {
-      img.focus();
-      if (!img.hasAttribute('tabindex')) {
-        img.setAttribute('tabindex', '-1');
-      }
-    }
-    
-    // Focar no body/document como fallback
-    document.body.focus();
-    if (document.body && !document.body.hasAttribute('tabindex')) {
-      document.body.setAttribute('tabindex', '-1');
-    }
-    window.focus();
-    
-    // Para garantir foco, também tentar com um elemento invisível focável
-    let focusHelper = document.getElementById('focus-helper');
-    if (!focusHelper) {
-      focusHelper = document.createElement('div');
-      focusHelper.id = 'focus-helper';
-      focusHelper.style.cssText = 'position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none;';
-      focusHelper.tabIndex = -1;
-      document.body.appendChild(focusHelper);
-    }
-    focusHelper.focus();
-  } catch (err) {
-    console.warn("⚠️ Erro ao forçar foco:", err);
   }
+  
+  // Se vídeo ou imagem estão visíveis, o player está ativo
+  if (video && video.style.display !== 'none') {
+    return true;
+  }
+  if (img && img.style.display !== 'none') {
+    return true;
+  }
+  
+  return false;
 }
 
-// ===== Função para entrar em fullscreen =====
-function entrarFullscreen() {
-  const elem = document.documentElement;
+// ===== Função AGRESSIVA para entrar em fullscreen automático =====
+let fullscreenInterval = null;
+let isFullscreenActive = false;
+
+// Verificar se já está em fullscreen
+function isFullscreen() {
+  return !!(document.fullscreenElement || 
+            document.webkitFullscreenElement || 
+            document.mozFullScreenElement || 
+            document.msFullscreenElement ||
+            (window.innerHeight === screen.height && window.innerWidth === screen.width));
+}
+
+// Função para tentar fullscreen em um elemento específico
+function tryFullscreenOnElement(element) {
+  if (!element) return false;
   
+  try {
+    // Padrão (Chrome, Firefox, Edge moderno)
+    if (element.requestFullscreen) {
+      element.requestFullscreen().catch(() => {});
+      return true;
+    }
+    // WebKit (Safari, Chrome antigo)
+    if (element.webkitRequestFullscreen) {
+      element.webkitRequestFullscreen();
+      return true;
+    }
+    // Mozilla (Firefox antigo)
+    if (element.mozRequestFullScreen) {
+      element.mozRequestFullScreen();
+      return true;
+    }
+    // IE/Edge antigo
+    if (element.msRequestFullscreen) {
+      element.msRequestFullscreen();
+      return true;
+    }
+  } catch (e) {
+    // Ignorar erros silenciosamente
+  }
+  
+  return false;
+}
+
+// Função principal para forçar fullscreen
+function entrarFullscreen() {
   // Verificar se já está em fullscreen
-  if (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement) {
-    return; // Já está em fullscreen
+  if (isFullscreen()) {
+    isFullscreenActive = true;
+    return;
   }
   
   // Verificar se há código E local salvos - se sim, FORÇAR fullscreen
@@ -2775,138 +2932,105 @@ function entrarFullscreen() {
   const localSalvo = localStorage.getItem(LOCAL_TELA_KEY);
   const temCodigoCompleto = codigoSalvo && codigoSalvo.trim() && localSalvo && localSalvo.trim();
   
-  if (temCodigoCompleto) {
-    console.log("🔒 Código e local salvos detectados - OBRIGANDO fullscreen");
-    // PRIMEIRO: Forçar foco no player antes de tentar fullscreen
-    forcarFocoNoPlayer();
+  // Se não tem código completo, não forçar
+  if (!temCodigoCompleto) {
+    return;
   }
   
-  // Tentar entrar em fullscreen com várias estratégias
-  const tryFullscreen = () => {
-    if (elem.requestFullscreen) {
-      return elem.requestFullscreen().catch(err => {
-        if (temCodigoCompleto) {
-          console.log("⚠️ requestFullscreen falhou (tentando novamente):", err.message);
-        }
-        return false;
-      });
-    } else if (elem.webkitRequestFullscreen) {
-      elem.webkitRequestFullscreen();
-      return Promise.resolve(true);
-    } else if (elem.mozRequestFullScreen) {
-      elem.mozRequestFullScreen();
-      return Promise.resolve(true);
-    } else if (elem.msRequestFullscreen) {
-      elem.msRequestFullscreen();
-      return Promise.resolve(true);
-    }
-    return Promise.resolve(false);
-  };
+  // Verificar se é PWA instalado (tem mais permissões)
+  const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+                window.navigator.standalone === true ||
+                document.referrer.includes('android-app://');
   
-  // Tentar imediatamente (já com foco garantido se temCodigoCompleto)
-  tryFullscreen().then(success => {
-    if (!success && temCodigoCompleto) {
-      // Se falhar E há código salvo, tentar mais agressivamente com múltiplas tentativas
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        tryFullscreen();
-      }, 100);
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        tryFullscreen();
-      }, 300);
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        tryFullscreen();
-      }, 600);
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        tryFullscreen();
-      }, 1000);
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        tryFullscreen();
-      }, 2000);
-    } else if (!success) {
-      // Se falhar sem código salvo, tentar uma vez mais
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        tryFullscreen();
-      }, 200);
-    }
-  });
+  // Lista de elementos para tentar fullscreen (em ordem de prioridade)
+  const elementsToTry = [
+    document.documentElement,  // HTML (padrão)
+    document.body,              // Body (funciona em alguns navegadores)
+  ];
   
-  // Para Android Chrome, também tentar com o body
-  if (/Android/i.test(navigator.userAgent)) {
-    setTimeout(() => {
-      forcarFocoNoPlayer();
-      const body = document.body;
-      if (body.requestFullscreen) {
-        body.requestFullscreen().catch(() => {});
-      } else if (body.webkitRequestFullscreen) {
-        body.webkitRequestFullscreen();
-      }
-    }, 100);
-    
-    // Se há código salvo, tentar mais vezes no Android
-    if (temCodigoCompleto) {
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        const body = document.body;
-        if (body.requestFullscreen) {
-          body.requestFullscreen().catch(() => {});
-        } else if (body.webkitRequestFullscreen) {
-          body.webkitRequestFullscreen();
-        }
-      }, 300);
-      setTimeout(() => {
-        forcarFocoNoPlayer();
-        const body = document.body;
-        if (body.requestFullscreen) {
-          body.requestFullscreen().catch(() => {});
-        } else if (body.webkitRequestFullscreen) {
-          body.webkitRequestFullscreen();
-        }
-      }, 800);
+  // Adicionar elementos de mídia se existirem
+  const video = document.getElementById("videoPlayer");
+  const img = document.getElementById("imgPlayer");
+  if (video && video.style.display !== 'none') {
+    elementsToTry.push(video);
+  }
+  if (img && img.style.display !== 'none') {
+    elementsToTry.push(img);
+  }
+  
+  // Tentar fullscreen em TODOS os elementos
+  let attempted = false;
+  for (const elem of elementsToTry) {
+    if (tryFullscreenOnElement(elem)) {
+      attempted = true;
+      // Não parar aqui, tentar em todos para máxima compatibilidade
     }
   }
   
-  // Se há código salvo, também tentar com o elemento de vídeo/imagem se existir
-  if (temCodigoCompleto) {
+  // Se é PWA, tentar ainda mais agressivamente
+  if (isPWA && !attempted) {
+    // Tentar com diferentes métodos específicos para PWA
     setTimeout(() => {
-      forcarFocoNoPlayer();
-      const video = document.getElementById("videoPlayer");
-      const img = document.getElementById("imgPlayer");
-      const mediaElement = video && video.style.display !== 'none' ? video : (img && img.style.display !== 'none' ? img : null);
-      
-      if (mediaElement) {
-        // Garantir que o elemento tenha foco antes de tentar fullscreen
-        mediaElement.focus();
-        if (!mediaElement.hasAttribute('tabindex')) {
-          mediaElement.setAttribute('tabindex', '-1');
-        }
-        
-        if (mediaElement.requestFullscreen) {
-          mediaElement.requestFullscreen().catch(() => {});
-        } else if (mediaElement.webkitRequestFullscreen) {
-          mediaElement.webkitRequestFullscreen();
-        } else if (mediaElement.mozRequestFullScreen) {
-          mediaElement.mozRequestFullScreen();
-        } else if (mediaElement.msRequestFullscreen) {
-          mediaElement.msRequestFullscreen();
-        }
-      }
-    }, 500);
+      tryFullscreenOnElement(document.documentElement);
+      tryFullscreenOnElement(document.body);
+    }, 50);
+  }
+  
+  // Iniciar monitoramento contínuo se ainda não estiver ativo
+  if (!fullscreenInterval) {
+    startFullscreenMonitoring();
   }
 }
 
+// Monitoramento contínuo para reativar fullscreen se sair
+function startFullscreenMonitoring() {
+  if (fullscreenInterval) return;
+  
+  fullscreenInterval = setInterval(() => {
+    const codigoSalvo = localStorage.getItem(CODIGO_DISPLAY_KEY);
+    const localSalvo = localStorage.getItem(LOCAL_TELA_KEY);
+    const temCodigoCompleto = codigoSalvo && codigoSalvo.trim() && localSalvo && localSalvo.trim();
+    
+    // Só monitorar se tiver código completo E player estiver ativo
+    if (!temCodigoCompleto || !isPlayerAtivo()) {
+      stopFullscreenMonitoring();
+      return;
+    }
+    
+    // Verificar se saiu do fullscreen
+    if (!isFullscreen()) {
+      isFullscreenActive = false;
+      // Tentar reativar imediatamente
+      entrarFullscreen();
+    } else {
+      isFullscreenActive = true;
+    }
+  }, 1000); // Verificar a cada 1 segundo
+}
+
+// Parar monitoramento
+function stopFullscreenMonitoring() {
+  if (fullscreenInterval) {
+    clearInterval(fullscreenInterval);
+    fullscreenInterval = null;
+  }
+  isFullscreenActive = false;
+}
+
 function mostrarLogin() {
+  // Parar monitoramento de fullscreen
+  stopFullscreenMonitoring();
+  
   // Sair do fullscreen se estiver em fullscreen
   if (document.fullscreenElement || document.webkitFullscreenElement) {
     if (document.exitFullscreen) {
       document.exitFullscreen().catch(() => {});
     } else if (document.webkitExitFullscreen) {
       document.webkitExitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
     }
   }
   

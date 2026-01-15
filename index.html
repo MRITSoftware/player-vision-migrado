@@ -153,8 +153,35 @@
   <script src="player.js"></script>
 
   <script>
+    // Debug: Verificar se funções estão disponíveis
+    window.addEventListener('load', () => {
+      console.log('🔍 Debug - Verificando funções disponíveis:');
+      console.log('  - startPlayer:', typeof startPlayer);
+      console.log('  - iniciar:', typeof iniciar);
+      console.log('  - entrarFullscreen:', typeof entrarFullscreen);
+      
+      // Verificar se botão existe
+      const btnEntrar = document.getElementById("btnEntrar");
+      console.log('  - btnEntrar existe:', !!btnEntrar);
+      
+      if (!btnEntrar) {
+        console.error('❌ Botão btnEntrar não encontrado!');
+      }
+    });
+    
     document.getElementById("btnEntrar").addEventListener("click", () => {
-      startPlayer();
+      console.log('🔘 Botão clicado - chamando startPlayer()');
+      try {
+        if (typeof startPlayer === 'function') {
+          startPlayer();
+        } else {
+          console.error('❌ startPlayer não é uma função!', typeof startPlayer);
+          alert('Erro: startPlayer não está disponível. Verifique o console.');
+        }
+      } catch (error) {
+        console.error('❌ Erro ao chamar startPlayer:', error);
+        alert('Erro: ' + error.message);
+      }
     });
     
     // Forçar fullscreen quando a página carrega se já estiver em modo standalone

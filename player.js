@@ -940,15 +940,30 @@ async function verificarCodigoSalvo() {
 }
 
 async function iniciar() {
+  console.log('🚀 iniciar() chamada');
+  console.log('📡 Status online:', navigator.onLine);
+  console.log('🔗 Supabase client:', typeof client !== 'undefined' ? 'disponível' : 'NÃO DISPONÍVEL');
+  
   setupOrientationWatcher();
 
-  const codigo = document.getElementById("codigoTela").value.trim().toUpperCase();
+  const codigoField = document.getElementById("codigoTela");
+  if (!codigoField) {
+    console.error('❌ Campo codigoTela não encontrado!');
+    alert('Erro: Campo de código não encontrado. Recarregue a página.');
+    return;
+  }
+  
+  const codigo = codigoField.value.trim().toUpperCase();
+  console.log('📝 Código digitado:', codigo);
   
   if (!codigo) {
+    console.warn('⚠️ Código vazio');
     showNotification("Informe o código do display!");
     ensureElementsVisible();
     return;
   }
+  
+  console.log('✅ Código válido, continuando...');
   
   // Buscar o nome do display na tabela displays
   let local = null;

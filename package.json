@@ -10,7 +10,9 @@
     "build:apk": "npm run build && pwabuilder android --manifest ./manifest.json --package com.mritsoftware.player --name 'MRIT Player' --short-name 'MRIT' --display standalone --orientation any --theme-color '#000000' --background-color '#000000' --skipPwaValidation",
     "capacitor:sync": "npm run build && npx cap sync",
     "capacitor:android": "npm run build && npx cap sync && npx cap open android",
-    "capacitor:build": "npm run build && npx cap sync android"
+    "capacitor:build": "npm run build && npx cap sync android",
+    "generate:icons": "node gerar-icones.js",
+    "setup:icons": "node configurar-icones-splash.js"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +26,7 @@
     "vite": "^5.4.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^5.5.1"
+    "@capacitor/cli": "^5.5.1",
+    "sharp": "^0.33.0"
   }
 }

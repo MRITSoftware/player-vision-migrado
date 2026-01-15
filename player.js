@@ -1886,97 +1886,124 @@ async function tocarLoop() {
         video.setAttribute("crossorigin", "anonymous");
         video.preload = "auto";
 
-        // Verificar se estamos offline e se o vídeo está no cache
-        if (!navigator.onLine) {
-          try {
-            const cacheKey = `${codigoAtual}::${itemUrl}`;
-            const cachedBlob = await idbGet(cacheKey);
+        // Verificar se o vídeo está no cache (tanto online quanto offline)
+        try {
+          const cacheKey = `${codigoAtual}::${itemUrl}`;
+          const cachedBlob = await idbGet(cacheKey);
+          
+          if (cachedBlob) {
+            console.log("📦 Carregando vídeo do cache:", itemUrl, "tamanho:", (cachedBlob.size / 1024 / 1024).toFixed(2), "MB");
+            // Criar URL do blob para o vídeo
+            const blobUrl = URL.createObjectURL(cachedBlob);
+            video.src = blobUrl;
+            video.load();
             
-            if (cachedBlob) {
-              console.log("📦 Carregando vídeo do cache offline:", itemUrl);
-              // Criar URL do blob para o vídeo
-              const blobUrl = URL.createObjectURL(cachedBlob);
-              video.src = blobUrl;
-              video.load();
-              
-              // Limpar URL do blob quando o vídeo terminar
-              video.addEventListener('ended', () => {
-                URL.revokeObjectURL(blobUrl);
-              }, { once: true });
-              
-              const ok = await waitForVideoReady(video, 8000);
-              if (myToken !== playToken || videoToken !== currentVideoToken) { 
-                URL.revokeObjectURL(blobUrl);
-                isLoadingVideo = false; 
-                clearTimeout(safetyTimeout); 
-                return; 
+            // Limpar URL do blob quando o vídeo terminar ou quando mudar de vídeo
+            const cleanupBlob = () => {
+              URL.revokeObjectURL(blobUrl);
+            };
+            video.addEventListener('ended', cleanupBlob, { once: true });
+            video.addEventListener('loadstart', () => {
+              // Se o vídeo mudar antes de terminar, limpar o blob anterior
+              if (video.src !== blobUrl) {
+                cleanupBlob();
               }
-              if (!ok || video.readyState < 3) {
-                console.error("Vídeo do cache não ficou pronto (readyState:", video.readyState, ")");
-                URL.revokeObjectURL(blobUrl);
-                isLoadingVideo = false; 
-                clearTimeout(safetyTimeout); 
-                proximoItem(); 
-                return;
-              }
-            } else {
-              console.warn("⚠️ Vídeo não encontrado no cache offline:", itemUrl);
+            }, { once: true });
+            
+            const ok = await waitForVideoReady(video, 8000);
+            if (myToken !== playToken || videoToken !== currentVideoToken) { 
+              cleanupBlob();
+              isLoadingVideo = false; 
+              clearTimeout(safetyTimeout); 
+              return; 
+            }
+            if (!ok || video.readyState < 3) {
+              console.error("Vídeo do cache não ficou pronto (readyState:", video.readyState, ")");
+              cleanupBlob();
               isLoadingVideo = false; 
               clearTimeout(safetyTimeout); 
               proximoItem(); 
               return;
             }
-          } catch (error) {
-            console.error("Erro ao carregar vídeo do cache:", error);
-            isLoadingVideo = false; 
-            clearTimeout(safetyTimeout); 
-            proximoItem(); 
-            return;
-          }
-        } else {
-          // aplicar src e carregar normalmente quando online
-          video.src = itemUrl;
-          video.load();
-
-          // Timeout adaptativo para internet lenta (usa velocidade já detectada)
-          const mp4Timeout = networkSpeed === 'slow' ? 24000 : networkSpeed === 'fast' ? 6000 : 8000;
-          const ok = await waitForVideoReady(video, mp4Timeout);
-          if (myToken !== playToken || videoToken !== currentVideoToken) { isLoadingVideo = false; clearTimeout(safetyTimeout); return; }
-          if (!ok || video.readyState < 3) {
-            console.warn("⚠️ Vídeo não ficou pronto (readyState:", video.readyState, ", timeout:", mp4Timeout, "ms)");
-            isLoadingVideo = false; 
-            clearTimeout(safetyTimeout);
-            // Se internet lenta, aguardar mais antes de desistir
-            if (networkSpeed === 'slow' && video.readyState >= 2) {
-              console.log("⏳ Internet lenta detectada, aguardando mais um pouco...");
-              setTimeout(() => {
-                if (video.readyState >= 3) {
-                  // Vídeo ficou pronto, continuar
-                  const fit = item.fit || (FIT_RULES[ORIENTATION]?.video || "cover");
-                  const focus = item.focus || "center center";
-                  applyFit(video, fit, focus);
-                  fadeOut(img, () => {
-                    fadeIn(video);
-                    isPlaying = true;
-                    videoRetryCount = 0;
-                    isLoadingVideo = false;
-                    clearTimeout(safetyTimeout);
-                    video.play().catch((playError) => {
-                      console.error("Erro ao reproduzir vídeo:", playError);
-                      video.muted = true;
-                      video.play().catch(() => {
-                        isLoadingVideo = false;
-                        clearTimeout(safetyTimeout);
-                        proximoItem();
-                      });
-                    });
-                  });
-                } else {
-                  proximoItem();
-                }
-              }, 3000);
+          } else {
+            // Vídeo não está no cache - usar URL original
+            if (!navigator.onLine) {
+              console.warn("⚠️ Vídeo não encontrado no cache offline:", itemUrl);
+              isLoadingVideo = false; 
+              clearTimeout(safetyTimeout);
+              proximoItem(); 
               return;
             }
+            
+            console.log("🌐 Carregando vídeo da rede:", itemUrl);
+            // aplicar src e carregar normalmente quando online
+            video.src = itemUrl;
+            video.load();
+
+            // Timeout adaptativo para internet lenta (usa velocidade já detectada)
+            const mp4Timeout = networkSpeed === 'slow' ? 24000 : networkSpeed === 'fast' ? 6000 : 8000;
+            const ok = await waitForVideoReady(video, mp4Timeout);
+            if (myToken !== playToken || videoToken !== currentVideoToken) { isLoadingVideo = false; clearTimeout(safetyTimeout); return; }
+            if (!ok || video.readyState < 3) {
+              console.warn("⚠️ Vídeo não ficou pronto (readyState:", video.readyState, ", timeout:", mp4Timeout, "ms)");
+              isLoadingVideo = false; 
+              clearTimeout(safetyTimeout);
+              // Se internet lenta, aguardar mais antes de desistir
+              if (networkSpeed === 'slow' && video.readyState >= 2) {
+                console.log("⏳ Internet lenta detectada, aguardando mais um pouco...");
+                setTimeout(() => {
+                  if (video.readyState >= 3) {
+                    // Vídeo ficou pronto, continuar
+                    const fit = item.fit || (FIT_RULES[ORIENTATION]?.video || "cover");
+                    const focus = item.focus || "center center";
+                    applyFit(video, fit, focus);
+                    fadeOut(img, () => {
+                      fadeIn(video);
+                      isPlaying = true;
+                      videoRetryCount = 0;
+                      isLoadingVideo = false;
+                      clearTimeout(safetyTimeout);
+                      video.play().catch((playError) => {
+                        console.error("Erro ao reproduzir vídeo:", playError);
+                        video.muted = true;
+                        video.play().catch(() => {
+                          isLoadingVideo = false;
+                          clearTimeout(safetyTimeout);
+                          proximoItem();
+                        });
+                      });
+                    });
+                  } else {
+                    proximoItem();
+                  }
+                }, 3000);
+                return;
+              }
+              proximoItem(); 
+              return;
+            }
+          }
+        } catch (error) {
+          console.error("Erro ao carregar vídeo do cache:", error);
+          // Em caso de erro, tentar carregar da rede se estiver online
+          if (navigator.onLine) {
+            console.log("🌐 Tentando carregar vídeo da rede após erro no cache:", itemUrl);
+            video.src = itemUrl;
+            video.load();
+            const mp4Timeout = networkSpeed === 'slow' ? 24000 : networkSpeed === 'fast' ? 6000 : 8000;
+            const ok = await waitForVideoReady(video, mp4Timeout);
+            if (myToken !== playToken || videoToken !== currentVideoToken) { isLoadingVideo = false; clearTimeout(safetyTimeout); return; }
+            if (!ok || video.readyState < 3) {
+              console.warn("⚠️ Vídeo não ficou pronto após erro no cache (readyState:", video.readyState, ")");
+              isLoadingVideo = false; 
+              clearTimeout(safetyTimeout);
+              proximoItem(); 
+              return;
+            }
+          } else {
+            console.error("Erro ao carregar vídeo e está offline:", error);
+            isLoadingVideo = false; 
+            clearTimeout(safetyTimeout); 
             proximoItem(); 
             return;
           }

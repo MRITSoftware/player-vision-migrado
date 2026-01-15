@@ -1,0 +1,115 @@
+import sharp from 'sharp';
+import { existsSync, mkdirSync, copyFileSync } from 'fs';
+import { dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const inputFile = 'vision_logo.png';
+const iconSizes = [192, 512];
+const androidIconSizes = [
+  { folder: 'mipmap-mdpi', size: 48 },
+  { folder: 'mipmap-hdpi', size: 72 },
+  { folder: 'mipmap-xhdpi', size: 96 },
+  { folder: 'mipmap-xxhdpi', size: 144 },
+  { folder: 'mipmap-xxxhdpi', size: 192 }
+];
+
+async function generateIcons() {
+  if (!existsSync(inputFile)) {
+    console.error(`❌ Arquivo ${inputFile} não encontrado!`);
+    process.exit(1);
+  }
+
+  console.log(`🎨 Gerando ícones a partir de ${inputFile}...\n`);
+
+  // 1. Gerar ícones para PWA (icon-192.png e icon-512.png)
+  console.log('📱 Gerando ícones PWA...');
+  for (const size of iconSizes) {
+    try {
+      const outputFile = `icon-${size}.png`;
+      
+      await sharp(inputFile)
+        .resize(size, size, {
+          fit: 'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 } // Fundo transparente
+        })
+        .toFile(outputFile);
+      
+      console.log(`   ✅ ${outputFile} gerado (${size}x${size}px)`);
+    } catch (error) {
+      console.error(`   ❌ Erro ao gerar icon-${size}.png:`, error.message);
+    }
+  }
+
+  // 2. Gerar ícones para Android (mipmap folders)
+  console.log('\n📱 Gerando ícones Android...');
+  const androidPath = 'android/app/src/main/res';
+  
+  if (existsSync(androidPath)) {
+    for (const { folder, size } of androidIconSizes) {
+      try {
+        const mipmapPath = `${androidPath}/${folder}`;
+        if (!existsSync(mipmapPath)) {
+          mkdirSync(mipmapPath, { recursive: true });
+        }
+        
+        const outputFile = `${mipmapPath}/ic_launcher.png`;
+        
+        await sharp(inputFile)
+          .resize(size, size, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .toFile(outputFile);
+        
+        console.log(`   ✅ ${outputFile} gerado (${size}x${size}px)`);
+      } catch (error) {
+        console.error(`   ❌ Erro ao gerar ícone ${folder}:`, error.message);
+      }
+    }
+  } else {
+    console.log(`   ⚠️  Pasta Android não encontrada (${androidPath})`);
+    console.log(`   ℹ️  Execute 'npx cap sync' primeiro para criar a estrutura`);
+  }
+
+  // 3. Gerar splash screen para Android
+  console.log('\n🖼️  Gerando splash screen Android...');
+  const drawablePath = `${androidPath}/drawable`;
+  
+  if (existsSync(androidPath)) {
+    try {
+      if (!existsSync(drawablePath)) {
+        mkdirSync(drawablePath, { recursive: true });
+      }
+      
+      // Splash screen geralmente usa 1080x1920 (portrait) ou 1920x1080 (landscape)
+      // Como o app é landscape, vamos criar 1920x1080
+      const splashFile = `${drawablePath}/splash.png`;
+      
+      await sharp(inputFile)
+        .resize(1920, 1080, {
+          fit: 'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 1 } // Fundo preto
+        })
+        .toFile(splashFile);
+      
+      console.log(`   ✅ ${splashFile} gerado (1920x1080px)`);
+    } catch (error) {
+      console.error(`   ❌ Erro ao gerar splash screen:`, error.message);
+    }
+  } else {
+    console.log(`   ⚠️  Pasta Android não encontrada (${androidPath})`);
+    console.log(`   ℹ️  Execute 'npx cap sync' primeiro para criar a estrutura`);
+  }
+
+  console.log('\n✅ Configuração concluída!');
+  console.log('\n📋 Próximos passos:');
+  console.log('   1. Os ícones PWA (icon-192.png e icon-512.png) foram gerados');
+  console.log('   2. Faça upload deles para o servidor');
+  console.log('   3. Execute: npm run capacitor:sync');
+  console.log('   4. O splash screen e ícones do Android serão configurados automaticamente');
+}
+
+generateIcons().catch(console.error);

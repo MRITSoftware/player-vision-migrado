@@ -14,14 +14,15 @@ module.exports = {
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 0,
+      launchShowDuration: 2000,
       launchAutoHide: true,
       backgroundColor: "#000000",
       androidSplashResourceName: "splash",
-      androidScaleType: "CENTER_CROP",
+      androidScaleType: "CENTER",
       showSpinner: false,
       splashFullScreen: true,
-      splashImmersive: true
+      splashImmersive: true,
+      imageUrl: "vision_logo.png"
     },
     StatusBar: {
       style: "DARK",

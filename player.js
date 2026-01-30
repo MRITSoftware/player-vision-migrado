@@ -708,6 +708,15 @@ async function verificarCodigoSalvo() {
             if (localNome) localStorage.setItem(LOCAL_TELA_KEY, localNome);
             console.log("💾 Código e local salvos no localStorage:", codigoDisplay, localNome);
             
+            // Configurar namespace no Service Worker IMEDIATAMENTE para usar cache correto
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({
+                action: "setNamespace",
+                namespace: codigoDisplay
+              });
+              console.log("📦 Namespace configurado no Service Worker:", codigoDisplay);
+            }
+            
             // Esconder elementos de login IMEDIATAMENTE (sem delay para não aparecer brevemente)
             const inputDiv = document.getElementById("codigoInput");
             const rodape = document.getElementById("rodape");
@@ -915,6 +924,15 @@ async function verificarCodigoSalvo() {
                 } else {
                   console.warn("⚠️ Erro ao atualizar device_id:", updateErr);
                 }
+              }
+              
+              // Configurar namespace no Service Worker IMEDIATAMENTE para usar cache correto
+              if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({
+                  action: "setNamespace",
+                  namespace: codigoSalvo.trim().toUpperCase()
+                });
+                console.log("📦 Namespace configurado no Service Worker:", codigoSalvo.trim().toUpperCase());
               }
               
               // Esconder elementos de login IMEDIATAMENTE (sem delay para não aparecer brevemente)
@@ -1172,6 +1190,15 @@ async function iniciar() {
   
   codigoAtual = codigo;
   
+  // Configurar namespace no Service Worker IMEDIATAMENTE para usar cache correto
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      action: "setNamespace",
+      namespace: codigoAtual
+    });
+    console.log("📦 Namespace configurado no Service Worker:", codigoAtual);
+  }
+  
   // Salvar código e local no localStorage para uso futuro
   localStorage.setItem(CODIGO_DISPLAY_KEY, codigo);
   localStorage.setItem(LOCAL_TELA_KEY, local);
@@ -1374,6 +1401,24 @@ async function iniciar() {
       const data = JSON.parse(cache);
       playlist = data.playlist;
       currentPlaylistId = data.codigo;
+      currentContentCode = codigo;
+      
+      // Configurar namespace no Service Worker para usar cache correto
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          action: "setNamespace",
+          namespace: codigoAtual
+        });
+        console.log("📦 Namespace configurado no Service Worker (offline):", codigoAtual);
+      }
+      
+      // Configurar realtime se for playlist
+      if (currentPlaylistId) {
+        subscribePlaylistChannel(currentPlaylistId);
+      } else {
+        subscribePlaylistChannel(null);
+      }
+      
       document.getElementById("codigoInput").style.display = "none";
       console.log("📦 Modo offline - usando cache da playlist:", playlist.length, "itens");
       tocarLoop();
@@ -1543,6 +1588,65 @@ async function carregarConteudo(codigoConteudo) {
     const wasVideo = video.style.display === "block";
     const currentUrl = currentItemUrl;
 
+    // ===== VERIFICAR CACHE PRIMEIRO =====
+    // Se há cache salvo, carregar imediatamente para iniciar rápido
+    const cacheSalvo = localStorage.getItem(cacheKeyFor(codigoAtual));
+    if (cacheSalvo && codigoAtual) {
+      try {
+        const data = JSON.parse(cacheSalvo);
+        if (data.playlist && Array.isArray(data.playlist) && data.playlist.length > 0) {
+          console.log("📦 Cache encontrado! Carregando playlist do cache:", data.playlist.length, "itens");
+          
+          // Configurar namespace no Service Worker para usar o cache correto
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              action: "setNamespace",
+              namespace: codigoAtual
+            });
+          }
+          
+          // Carregar playlist do cache imediatamente
+          const cachedPlaylistId = data.codigo || null;
+          playlist = data.playlist;
+          currentPlaylistId = cachedPlaylistId;
+          currentContentCode = codigoConteudo;
+          
+          // Se for playlist, configurar realtime
+          if (cachedPlaylistId) {
+            subscribePlaylistChannel(cachedPlaylistId);
+          } else {
+            subscribePlaylistChannel(null);
+          }
+          
+          // Atualizar playlist com estado anterior (se houver)
+          await atualizarPlaylist(playlist, cachedPlaylistId, {
+            wasPlaying, currentTime, wasVideo, currentUrl
+          });
+          
+          // Iniciar reprodução imediatamente do cache
+          if (!isPlaying) {
+            tocarLoop();
+          }
+          
+          console.log("✅ Playlist carregada do cache, iniciando reprodução imediatamente");
+          
+          // Verificar mudanças no banco em background (não bloqueia)
+          if (navigator.onLine) {
+            console.log("🔄 Verificando mudanças na playlist em background...");
+            verificarMudancasPlaylistEmBackground(codigoConteudo, cachedPlaylistId).catch(err => {
+              console.warn("⚠️ Erro ao verificar mudanças em background:", err);
+            });
+          }
+          
+          return; // Retornar aqui - já carregou do cache
+        }
+      } catch (err) {
+        console.warn("⚠️ Erro ao carregar cache salvo, buscando do banco:", err);
+        // Continuar para buscar do banco
+      }
+    }
+
+    // ===== BUSCAR DO BANCO (se não há cache ou cache inválido) =====
     // Conteúdo único
     let { data: conteudo } = await client
       .from("conteudos")
@@ -1609,6 +1713,99 @@ async function carregarConteudo(codigoConteudo) {
     });
   } catch (err) {
     console.error(err);
+  }
+}
+
+// ===== Verificar mudanças na playlist em background =====
+async function verificarMudancasPlaylistEmBackground(codigoConteudo, cachedPlaylistId) {
+  try {
+    // Verificar se é conteúdo único ou playlist
+    let { data: conteudo } = await client
+      .from("conteudos")
+      .select("*")
+      .eq("codigoAnuncio", codigoConteudo)
+      .maybeSingle();
+
+    if (conteudo) {
+      // Conteúdo único
+      const isImageType =
+        (conteudo.tipo || "").toLowerCase() === "imagem" ||
+        /\.(jpg|jpeg|png|webp)(\?|$)/i.test(conteudo.url);
+
+      const newPlaylist = [{
+        url: conteudo.url,
+        tipo: conteudo.tipo,
+        duration: isImageType ? 0 : null,
+        fit: conteudo.fit ?? null,
+        focus: conteudo.focus ?? null,
+        urlPortrait: conteudo.urlPortrait ?? null,
+        urlLandscape: conteudo.urlLandscape ?? null,
+      }];
+
+      // Comparar com cache atual
+      const cacheAtual = playlist || [];
+      const mudou = JSON.stringify(cacheAtual) !== JSON.stringify(newPlaylist);
+      
+      if (mudou) {
+        console.log("🔄 Mudança detectada no conteúdo único, atualizando cache...");
+        currentPlaylistId = null;
+        currentContentCode = codigoConteudo;
+        subscribePlaylistChannel(null);
+        await atualizarPlaylist(newPlaylist, null, {});
+      } else {
+        console.log("✅ Conteúdo único não mudou, mantendo cache");
+      }
+      return;
+    }
+
+    // Playlist
+    let { data: playlistData } = await client
+      .from("playlists")
+      .select("*")
+      .eq("codigo_unico", codigoConteudo)
+      .maybeSingle();
+
+    if (!playlistData) {
+      console.warn("⚠️ Playlist não encontrada no banco");
+      return;
+    }
+
+    let { data: itens } = await client
+      .from("playlist_itens")
+      .select("*")
+      .eq("playlist_id", codigoConteudo)
+      .order("ordem", { ascending: true });
+
+    const newPlaylist = (itens || []).map(item => ({
+      url: item.url,
+      tipo: item.tipo || "Vídeo",
+      duration: item.tipo?.toLowerCase() === "imagem" ? 15000 : null,
+      fit: item.fit ?? null,
+      focus: item.focus ?? null,
+      urlPortrait: item.urlPortrait ?? null,
+      urlLandscape: item.urlLandscape ?? null,
+    }));
+
+    // Comparar com cache atual
+    const cacheAtual = playlist || [];
+    const urlsCache = cacheAtual.map(i => pickSourceForOrientation(i)).sort();
+    const urlsNovo = newPlaylist.map(i => pickSourceForOrientation(i)).sort();
+    const mudou = urlsCache.length !== urlsNovo.length || 
+                  urlsCache.join('|') !== urlsNovo.join('|');
+
+    if (mudou) {
+      console.log("🔄 Mudança detectada na playlist, atualizando cache...");
+      console.log(`📊 Cache: ${cacheAtual.length} itens | Banco: ${newPlaylist.length} itens`);
+      
+      currentPlaylistId = codigoConteudo;
+      currentContentCode = codigoConteudo;
+      subscribePlaylistChannel(currentPlaylistId);
+      await atualizarPlaylist(newPlaylist, codigoConteudo, {});
+    } else {
+      console.log("✅ Playlist não mudou, mantendo cache");
+    }
+  } catch (err) {
+    console.error("❌ Erro ao verificar mudanças em background:", err);
   }
 }
 

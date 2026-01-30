@@ -1900,23 +1900,22 @@ async function tocarLoop() {
           const focus = item.focus || "center center";
           applyFit(video, fit, focus);
 
-            fadeOut(img, () => {
-              fadeIn(video);
-              isPlaying = true;
-              videoRetryCount = 0;
-              isLoadingVideo = false;
-              clearTimeout(safetyTimeout);
-              video.play().catch((e) => {
-                console.error("Erro play HLS:", e);
-                video.muted = true;
-                video.play().catch(() => proximoItem());
-              });
-              
-              // Tentar fullscreen quando vídeo HLS começar a tocar (múltiplas tentativas)
-              setTimeout(() => entrarFullscreen(), 500);
-              setTimeout(() => entrarFullscreen(), 1500);
-              setTimeout(() => entrarFullscreen(), 3000);
-            });
+          img.style.display = "none";
+          video.style.display = "block";
+          isPlaying = true;
+          videoRetryCount = 0;
+          isLoadingVideo = false;
+          clearTimeout(safetyTimeout);
+          video.play().catch((e) => {
+            console.error("Erro play HLS:", e);
+            video.muted = true;
+            video.play().catch(() => proximoItem());
+          });
+          
+          // Tentar fullscreen quando vídeo HLS começar a tocar (múltiplas tentativas)
+          setTimeout(() => entrarFullscreen(), 500);
+          setTimeout(() => entrarFullscreen(), 1500);
+          setTimeout(() => entrarFullscreen(), 3000);
         } else if (window.Hls && window.Hls.isSupported()) {
           hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
           hls.loadSource(itemUrl);
@@ -1931,14 +1930,13 @@ async function tocarLoop() {
             const focus = item.focus || "center center";
             applyFit(video, fit, focus);
 
-            fadeOut(img, () => {
-              fadeIn(video);
-              isPlaying = true;
-              videoRetryCount = 0;
-              isLoadingVideo = false;
-              clearTimeout(safetyTimeout);
-              video.play().catch(() => { video.muted = true; video.play(); });
-            });
+            img.style.display = "none";
+            video.style.display = "block";
+            isPlaying = true;
+            videoRetryCount = 0;
+            isLoadingVideo = false;
+            clearTimeout(safetyTimeout);
+            video.play().catch(() => { video.muted = true; video.play(); });
           });
           hls.on(Hls.Events.ERROR, (evt, data) => {
             if (data.fatal) {
@@ -1980,14 +1978,13 @@ async function tocarLoop() {
           const focus = item.focus || "center center";
           applyFit(video, fit, focus);
 
-          fadeOut(img, () => {
-            fadeIn(video);
-            isPlaying = true;
-            videoRetryCount = 0;
-            isLoadingVideo = false;
-            clearTimeout(safetyTimeout);
-            video.play().catch(() => { video.muted = true; video.play(); });
-          });
+          img.style.display = "none";
+          video.style.display = "block";
+          isPlaying = true;
+          videoRetryCount = 0;
+          isLoadingVideo = false;
+          clearTimeout(safetyTimeout);
+          video.play().catch(() => { video.muted = true; video.play(); });
         }
       } else {
         // ---- MP4/WebM/etc (sem HEAD) ----
@@ -2066,20 +2063,19 @@ async function tocarLoop() {
                     const fit = item.fit || (FIT_RULES[ORIENTATION]?.video || "cover");
                     const focus = item.focus || "center center";
                     applyFit(video, fit, focus);
-                    fadeOut(img, () => {
-                      fadeIn(video);
-                      isPlaying = true;
-                      videoRetryCount = 0;
-                      isLoadingVideo = false;
-                      clearTimeout(safetyTimeout);
-                      video.play().catch((playError) => {
-                        console.error("Erro ao reproduzir vídeo:", playError);
-                        video.muted = true;
-                        video.play().catch(() => {
-                          isLoadingVideo = false;
-                          clearTimeout(safetyTimeout);
-                          proximoItem();
-                        });
+                    img.style.display = "none";
+                    video.style.display = "block";
+                    isPlaying = true;
+                    videoRetryCount = 0;
+                    isLoadingVideo = false;
+                    clearTimeout(safetyTimeout);
+                    video.play().catch((playError) => {
+                      console.error("Erro ao reproduzir vídeo:", playError);
+                      video.muted = true;
+                      video.play().catch(() => {
+                        isLoadingVideo = false;
+                        clearTimeout(safetyTimeout);
+                        proximoItem();
                       });
                     });
                   } else {
@@ -2122,20 +2118,19 @@ async function tocarLoop() {
         const focus = item.focus || "center center";
         applyFit(video, fit, focus);
 
-        fadeOut(img, () => {
-          fadeIn(video);
-          isPlaying = true;
-          videoRetryCount = 0;
-          isLoadingVideo = false;
-          clearTimeout(safetyTimeout);
-          video.play().catch((playError) => {
-            console.error("Erro ao reproduzir vídeo:", playError);
-            video.muted = true;
-            video.play().catch(() => {
-              isLoadingVideo = false;
-              clearTimeout(safetyTimeout);
-              proximoItem();
-            });
+        img.style.display = "none";
+        video.style.display = "block";
+        isPlaying = true;
+        videoRetryCount = 0;
+        isLoadingVideo = false;
+        clearTimeout(safetyTimeout);
+        video.play().catch((playError) => {
+          console.error("Erro ao reproduzir vídeo:", playError);
+          video.muted = true;
+          video.play().catch(() => {
+            isLoadingVideo = false;
+            clearTimeout(safetyTimeout);
+            proximoItem();
           });
         });
       }
@@ -2178,28 +2173,27 @@ async function tocarLoop() {
       const focus = item.focus || "center center";
       applyFit(img, fit, focus);
 
-      fadeOut(video, () => {
-        fadeIn(img);
-        isPlaying = true;
+      video.style.display = "none";
+      img.style.display = "block";
+      isPlaying = true;
 
-        if (typeof duration === "number" && duration > 0) {
-          img.timeoutId = setTimeout(async () => {
-            isPlaying = false;
-            
-            // Verificar código ao final da imagem
-            const mudou = await verificarCodigoDispositivoAoCiclo();
-            if (mudou) {
-              return; // Se mudou, carregarConteudo já foi chamado
-            }
-            
-            if (pendingResync) {
-              pendingResync = false;
-              await carregarConteudo(currentPlaylistId || codigoAtual);
-            }
-            proximoItem();
-          }, duration);
-        }
-      });
+      if (typeof duration === "number" && duration > 0) {
+        img.timeoutId = setTimeout(async () => {
+          isPlaying = false;
+          
+          // Verificar código ao final da imagem
+          const mudou = await verificarCodigoDispositivoAoCiclo();
+          if (mudou) {
+            return; // Se mudou, carregarConteudo já foi chamado
+          }
+          
+          if (pendingResync) {
+            pendingResync = false;
+            await carregarConteudo(currentPlaylistId || codigoAtual);
+          }
+          proximoItem();
+        }, duration);
+      }
     };
     img.onerror = () => {
       isPlaying = false;
@@ -2210,30 +2204,6 @@ async function tocarLoop() {
   }
 }
 
-// Funções de transição fade in/out
-function fadeIn(el) {
-  el.style.opacity = 0;
-  el.style.display = "block";
-  let o = 0;
-  const it = setInterval(() => {
-    o += 0.05;
-    el.style.opacity = o;
-    if (o >= 1) clearInterval(it);
-  }, 50);
-}
-
-function fadeOut(el, cb) {
-  let o = 1;
-  const it = setInterval(() => {
-    o -= 0.05;
-    el.style.opacity = o;
-    if (o <= 0) {
-      clearInterval(it);
-      el.style.display = "none";
-      if (cb) cb();
-    }
-  }, 50);
-}
 
 // ===== Detectar velocidade de rede =====
 let networkSpeed = 'normal'; // 'slow', 'normal', 'fast'

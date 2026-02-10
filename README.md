@@ -1,4 +1,6 @@
-# MRIT Player Vision
+# MRIT Player Vision Android Migrado
+
+Projeto Android nativo do MRIT Player Vision, migrado a partir do PWA.
 
 Player de mídia digital para exibição em displays Android usando PWA (Progressive Web App).
 

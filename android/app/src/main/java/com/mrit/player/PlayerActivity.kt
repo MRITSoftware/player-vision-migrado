@@ -490,5 +490,49 @@ class PlayerActivity : AppCompatActivity() {
             "R$ $valor"
         }
     }
+
+    private fun iniciarWatchDeComandos() {
+        if (deviceCommandJob?.isActive == true) return
+
+        val service = DeviceCommandService()
+        deviceCommandJob = lifecycleScope.launch {
+            while (isActive) {
+                delay(10000) // 10s
+                val deviceId = withContext(Dispatchers.IO) {
+                    DeviceIdProvider.getDeviceId(this@PlayerActivity)
+                }
+                val comandos = withContext(Dispatchers.IO) {
+                    service.getPendingCommands(deviceId)
+                }
+
+                for (comando in comandos) {
+                    try {
+                        when (comando.command) {
+                            "restart_app" -> {
+                                // Marcar como executado antes de reiniciar
+                                withContext(Dispatchers.IO) {
+                                    service.markExecuted(comando.id)
+                                }
+                                // Reiniciar a Activity (equivalente a location.reload() no JS)
+                                runOnUiThread {
+                                    recreate()
+                                }
+                                return@launch // Sair após processar restart
+                            }
+                            else -> {
+                                // Outros comandos podem ser adicionados aqui
+                                // Marcar como executado mesmo assim
+                                withContext(Dispatchers.IO) {
+                                    service.markExecuted(comando.id)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Ignorar erros ao processar comandos
+                    }
+                }
+            }
+        }
+    }
 }
 

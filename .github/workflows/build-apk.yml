@@ -60,12 +60,23 @@ jobs:
         cp MainActivity.java android/app/src/main/java/com/mritsoftware/player/MainActivity.java
         echo "✅ MainActivity.java copiado"
       
-    - name: Configurar permissões do Gradle
-      run: chmod +x android/gradlew
+    - name: Configurar Gradle (wrapper ou global)
+      run: |
+        if [ -f "android/gradlew" ]; then
+          echo "✅ Encontrado android/gradlew, adicionando permissão de execução..."
+          chmod +x android/gradlew
+        else
+          echo "ℹ️ Wrapper android/gradlew não encontrado, será usado o Gradle global (comando 'gradle')"
+        fi
       
     - name: Build APK Debug
       working-directory: android
-      run: ./gradlew assembleDebug --no-daemon
+      run: |
+        if [ -f "gradlew" ]; then
+          ./gradlew assembleDebug --no-daemon
+        else
+          gradle assembleDebug --no-daemon
+        fi
       env:
         ANDROID_HOME: ${{ env.ANDROID_HOME }}
         ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}

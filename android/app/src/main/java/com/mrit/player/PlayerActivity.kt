@@ -1,0 +1,492 @@
+package com.mrit.player
+
+import android.os.Bundle
+import android.view.View
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.Toast
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import coil.load
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.source.DefaultMediaSourceFactory
+import com.google.android.exoplayer2.upstream.DataSource
+import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
+import com.google.android.exoplayer2.upstream.cache.CacheDataSource
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
+import com.google.android.exoplayer2.ui.PlayerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class PlayerActivity : AppCompatActivity() {
+
+    private lateinit var playerView: PlayerView
+    private lateinit var imageView: ImageView
+    private lateinit var logoContainer: LinearLayout
+    private lateinit var codigoInputContainer: LinearLayout
+    private lateinit var rodapeContainer: LinearLayout
+    private lateinit var codigoEditText: EditText
+    private lateinit var btnConfirmarCodigo: Button
+    private lateinit var rodapeTexto: TextView
+    private lateinit var promoOverlay: FrameLayout
+    private lateinit var promoImage: ImageView
+    private lateinit var promoText: TextView
+    private lateinit var promoOriginalPrice: TextView
+    private lateinit var promoPrice: TextView
+    private lateinit var promoCounterView: TextView
+    private var exoPlayer: ExoPlayer? = null
+
+    private val playlist: MutableList<PlaylistItem> = mutableListOf()
+    private var currentIndex = 0
+    private var isShowingVideo = false
+
+    private lateinit var downloadManager: VideoDownloadManager
+    private var heartbeatJob: Job? = null
+    private var playlistWatchJob: Job? = null
+    private var promoWatchJob: Job? = null
+    private var deviceCommandJob: Job? = null
+    private var currentPlaylistSignature: String? = null
+    private var currentCodigo: String? = null
+    private var currentPromotion: PromotionData? = null
+
+    private val nextRunnable = Runnable {
+        nextItem()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        setContentView(R.layout.activity_player)
+
+        playerView = findViewById(R.id.videoView)
+        imageView = findViewById(R.id.imageView)
+        logoContainer = findViewById(R.id.logoContainer)
+        codigoInputContainer = findViewById(R.id.codigoInputContainer)
+        rodapeContainer = findViewById(R.id.rodapeContainer)
+        codigoEditText = findViewById(R.id.codigoInput)
+        btnConfirmarCodigo = findViewById(R.id.btnConfirmarCodigo)
+        rodapeTexto = findViewById(R.id.rodapeTexto)
+        promoOverlay = findViewById(R.id.promoOverlay)
+        promoImage = findViewById(R.id.promoImage)
+        promoText = findViewById(R.id.promoText)
+        promoOriginalPrice = findViewById(R.id.promoOriginalPrice)
+        promoPrice = findViewById(R.id.promoPrice)
+        promoCounterView = findViewById(R.id.promoCounter)
+
+        initPlayer()
+        downloadManager = VideoDownloadManager(this)
+
+        // Configurar botão de confirmação de código
+        btnConfirmarCodigo.setOnClickListener {
+            val codigo = codigoEditText.text.toString().trim().uppercase()
+            if (codigo.isNotBlank()) {
+                validarEAplicarCodigo(codigo)
+            } else {
+                Toast.makeText(this, "Informe o código da tela", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Verificar se já existe código salvo (equivalente a verificarCodigoSalvo local)
+        val prefs = getSharedPreferences("mrit_prefs", MODE_PRIVATE)
+        val codigoSalvo = prefs.getString("display_codigo", null)
+        if (!codigoSalvo.isNullOrBlank()) {
+            codigoEditText.setText(codigoSalvo)
+            // Ao abrir com código salvo, também podemos validar com o backend
+            validarEAplicarCodigo(codigoSalvo)
+        } else {
+            aplicarEstadoSemCodigo()
+        }
+    }
+
+    private fun validarEAplicarCodigo(codigo: String) {
+        val ctx = this
+        lifecycleScope.launch {
+            val deviceId = DeviceIdProvider.getDeviceId(ctx)
+            val deviceService = SupabaseDeviceService()
+
+            val resultado = withContext(Dispatchers.IO) {
+                // 1) Verificar se o display existe
+                val display = deviceService.getDisplay(codigo)
+                if (display == null) {
+                    return@withContext "Código inválido ou não encontrado"
+                }
+
+                // 2) Verificar se já há dispositivo ativo usando esse código
+                val active = deviceService.getActiveDeviceForCodigo(codigo)
+                if (active != null && !active.deviceId.isNullOrBlank() && active.deviceId != deviceId) {
+                    val localNome = active.localNome ?: "outro local"
+                    return@withContext "Código já está em uso em: $localNome"
+                }
+
+                // Se chegou aqui, consideramos válido para este dispositivo
+                null
+            }
+
+            if (resultado != null) {
+                Toast.makeText(ctx, resultado, Toast.LENGTH_LONG).show()
+                aplicarEstadoSemCodigo()
+            } else {
+                salvarCodigoLocal(codigo)
+                currentCodigo = codigo
+                aplicarEstadoComCodigo(codigo)
+                // Marcar display em uso e iniciar heartbeat
+                iniciarHeartbeat(codigo)
+                iniciarWatchDePromocao(codigo)
+                iniciarWatchDeComandos()
+                carregarPlaylistDoBackend(codigo)
+            }
+        }
+    }
+
+    private fun iniciarHeartbeat(codigo: String) {
+        heartbeatJob?.cancel()
+        val ctx = this
+        heartbeatJob = lifecycleScope.launch {
+            val deviceId = DeviceIdProvider.getDeviceId(ctx)
+            val service = SupabaseDeviceService()
+
+            // Atualização inicial (equivalente a "Em uso" + device_id)
+            withContext(Dispatchers.IO) {
+                service.marcarDisplayEmUso(codigo, deviceId)
+            }
+
+            // Heartbeat periódico
+            while (isActive) {
+                delay(30000) // 30s
+                withContext(Dispatchers.IO) {
+                    service.enviarHeartbeat(codigo, deviceId)
+                }
+            }
+        }
+    }
+
+    private fun salvarCodigoLocal(codigo: String) {
+        val prefs = getSharedPreferences("mrit_prefs", MODE_PRIVATE)
+        prefs.edit()
+            .putString("display_codigo", codigo)
+            .apply()
+    }
+
+    private fun aplicarEstadoComCodigo(codigo: String) {
+        // Esconder "tela de login" e deixar player full
+        codigoInputContainer.visibility = View.GONE
+        rodapeContainer.visibility = View.GONE
+        logoContainer.visibility = View.GONE
+
+        playerView.visibility = View.VISIBLE
+        imageView.visibility = View.VISIBLE
+
+        // Atualizar texto de rodapé se quiser (ex: mostrar o código/local)
+        rodapeTexto.text = "Código: $codigo"
+    }
+
+    private fun aplicarEstadoSemCodigo() {
+        // Mostrar tela de entrada de código
+        codigoInputContainer.visibility = View.VISIBLE
+        rodapeContainer.visibility = View.VISIBLE
+        logoContainer.visibility = View.VISIBLE
+
+        // Esconder player até ter código
+        playerView.visibility = View.GONE
+        imageView.visibility = View.GONE
+
+        heartbeatJob?.cancel()
+        playlistWatchJob?.cancel()
+        promoWatchJob?.cancel()
+        deviceCommandJob?.cancel()
+
+        // Marcar cache como não pronto ao sair
+        currentCodigo?.let { codigo ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                val service = SupabaseDeviceService()
+                service.atualizarStatusCache(codigo, cached = false)
+            }
+        }
+
+        currentCodigo = null
+        currentPromotion = null
+        promoOverlay.visibility = View.GONE
+    }
+
+    private fun initPlayer() {
+        val dataSourceFactory = buildCacheDataSource()
+
+        exoPlayer = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .build().also { player ->
+            playerView.player = player
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED && isShowingVideo) {
+                        nextItem()
+                    }
+                }
+            })
+        }
+    }
+
+    private fun buildCacheDataSource(): DataSource.Factory {
+        val cache = VideoCache.get(this)
+        val upstream = DefaultHttpDataSource.Factory()
+        return CacheDataSource.Factory()
+            .setCache(cache)
+            .setUpstreamDataSourceFactory(upstream)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    private fun carregarPlaylistDoBackend(codigoConteudo: String) {
+        val service = PlaylistService()
+        lifecycleScope.launch {
+            val itens = withContext(Dispatchers.IO) {
+                service.carregarPlaylist(codigoConteudo)
+            }
+            playlist.clear()
+            playlist.addAll(itens)
+            currentPlaylistSignature = buildPlaylistSignature(playlist)
+            iniciarWatchDePlaylist(codigoConteudo)
+            // Disparar pré-cache em background (não bloqueia reprodução)
+            downloadManager.preCachePlaylist(playlist)
+
+            // Marcar cache como pronto no banco (simplificado: após iniciar pré-cache)
+            currentCodigo?.let { codigo ->
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val service = SupabaseDeviceService()
+                    service.atualizarStatusCache(codigo, cached = true)
+                }
+            }
+            playLoop()
+        }
+    }
+
+    private fun buildPlaylistSignature(list: List<PlaylistItem>): String {
+        return list.joinToString("|") {
+            "${it.url}#${it.type}#${it.durationMs}#${it.urlPortrait}#${it.urlLandscape}"
+        }
+    }
+
+    private fun iniciarWatchDePlaylist(codigoConteudo: String) {
+        if (playlistWatchJob?.isActive == true) return
+
+        val service = PlaylistService()
+        playlistWatchJob = lifecycleScope.launch {
+            while (isActive) {
+                delay(30000) // 30s
+                val novosItens = withContext(Dispatchers.IO) {
+                    service.carregarPlaylist(codigoConteudo)
+                }
+                val novaAssinatura = buildPlaylistSignature(novosItens)
+                if (novosItens.isNotEmpty() && novaAssinatura != currentPlaylistSignature) {
+                    playlist.clear()
+                    playlist.addAll(novosItens)
+                    currentPlaylistSignature = novaAssinatura
+                    // Reiniciar loop a partir do índice atual (ou 0)
+                    currentIndex = currentIndex % playlist.size
+                    playLoop()
+                }
+            }
+        }
+    }
+
+    private fun playLoop() {
+        if (playlist.isEmpty()) return
+        currentIndex = currentIndex % playlist.size
+        val item = playlist[currentIndex]
+
+        when (item.type) {
+            ItemType.VIDEO -> playVideo(item)
+            ItemType.IMAGE -> showImage(item)
+        }
+    }
+
+    private fun pickUrlForOrientation(item: PlaylistItem): String {
+        val orientation = resources.configuration.orientation
+        val isPortrait = orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
+        return when {
+            isPortrait && !item.urlPortrait.isNullOrBlank() -> item.urlPortrait
+            !isPortrait && !item.urlLandscape.isNullOrBlank() -> item.urlLandscape
+            else -> item.url
+        }
+    }
+
+    private fun applyFitForVideo(item: PlaylistItem) {
+        // Baseado em FIT_RULES do JS: default "cover" para tudo
+        val fit = (item.fit ?: "cover").lowercase()
+        when (fit) {
+            "contain" -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            "fill" -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+            else -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM // "cover"
+        }
+    }
+
+    private fun applyFitForImage(item: PlaylistItem) {
+        val fit = (item.fit ?: "cover").lowercase()
+        imageView.scaleType = when (fit) {
+            "contain" -> ImageView.ScaleType.FIT_CENTER
+            "fill" -> ImageView.ScaleType.FIT_XY
+            else -> ImageView.ScaleType.CENTER_CROP // "cover"
+        }
+    }
+
+    private fun playVideo(item: PlaylistItem) {
+        isShowingVideo = true
+        imageView.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+
+        imageView.removeCallbacks(nextRunnable)
+
+        val url = pickUrlForOrientation(item)
+        applyFitForVideo(item)
+
+        val mediaItem = MediaItem.fromUri(url)
+        exoPlayer?.setMediaItem(mediaItem)
+        exoPlayer?.prepare()
+        exoPlayer?.playWhenReady = true
+    }
+
+    private fun showImage(item: PlaylistItem) {
+        isShowingVideo = false
+        exoPlayer?.stop()
+        playerView.visibility = View.GONE
+        imageView.visibility = View.VISIBLE
+
+        val duration = item.durationMs ?: 15000L
+
+        val url = pickUrlForOrientation(item)
+        applyFitForImage(item)
+
+        imageView.load(url) {
+            crossfade(true)
+        }
+
+        imageView.removeCallbacks(nextRunnable)
+        imageView.postDelayed(nextRunnable, duration)
+    }
+
+    private fun nextItem() {
+        currentIndex = (currentIndex + 1) % playlist.size
+        playLoop()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        imageView.removeCallbacks(nextRunnable)
+        exoPlayer?.release()
+        exoPlayer = null
+        heartbeatJob?.cancel()
+        playlistWatchJob?.cancel()
+        promoWatchJob?.cancel()
+        deviceCommandJob?.cancel()
+    }
+
+    // ===== Promoções =====
+
+    private fun iniciarWatchDePromocao(codigo: String) {
+        if (promoWatchJob?.isActive == true) return
+
+        val service = PromotionService()
+        promoWatchJob = lifecycleScope.launch {
+            while (isActive) {
+                delay(15000) // 15s
+                val promo = withContext(Dispatchers.IO) {
+                    service.getPromotionForCodigo(codigo)
+                }
+
+                if (promo == null) {
+                    // Não há promoção ativa: esconder overlay se estiver visível
+                    if (promoOverlay.visibility == View.VISIBLE) {
+                        promoOverlay.visibility = View.GONE
+                        currentPromotion = null
+                    }
+                } else {
+                    // Há promoção ativa
+                    if (currentPromotion == null) {
+                        // Abrir overlay pela primeira vez
+                        currentPromotion = promo
+                        mostrarPromocao(promo)
+                    } else if (currentPromotion?.idPromo == promo.idPromo) {
+                        // Atualizar contador/textos se mudou
+                        if (promo.contador != currentPromotion?.contador ||
+                            promo.texto != currentPromotion?.texto ||
+                            promo.valorAntes != currentPromotion?.valorAntes ||
+                            promo.valorPromo != currentPromotion?.valorPromo
+                        ) {
+                            currentPromotion = promo
+                            atualizarViewsPromocao(promo)
+                        }
+                    } else {
+                        // Promo diferente: substituir
+                        currentPromotion = promo
+                        mostrarPromocao(promo)
+                    }
+
+                    // Se contador chegou a zero, desativar (seguindo lógica do JS)
+                    if (promo.contador <= 0) {
+                        withContext(Dispatchers.IO) {
+                            service.desativarPromocao(codigo, promo.idPromo)
+                        }
+                        currentPromotion = null
+                        promoOverlay.visibility = View.GONE
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mostrarPromocao(promo: PromotionData) {
+        atualizarViewsPromocao(promo)
+        promoOverlay.visibility = View.VISIBLE
+    }
+
+    private fun atualizarViewsPromocao(promo: PromotionData) {
+        // Imagem
+        if (!promo.imagemUrl.isNullOrBlank()) {
+            promoImage.visibility = View.VISIBLE
+            promoImage.load(promo.imagemUrl) {
+                crossfade(true)
+            }
+        } else {
+            promoImage.visibility = View.GONE
+        }
+
+        // Texto
+        promoText.text = promo.texto ?: "Promoção especial"
+
+        // Preços (formatar em pt-BR semelhante ao JS)
+        promoOriginalPrice.text = formatarValorMonetario(promo.valorAntes)
+        promoPrice.text = formatarValorMonetario(promo.valorPromo)
+
+        // Contador
+        promoCounterView.text = promo.contador.toString()
+    }
+
+    private fun formatarValorMonetario(valor: String?): String {
+        if (valor.isNullOrBlank()) return ""
+        return try {
+            // Tentar tratar como número em reais (pode vir em centavos ou já formatado)
+            if (valor.contains(",")) {
+                "R$ $valor"
+            } else {
+                val numero = valor.toDoubleOrNull() ?: return "R$ $valor"
+                val locale = java.util.Locale("pt", "BR")
+                val format = java.text.NumberFormat.getCurrencyInstance(locale)
+                format.format(
+                    if (numero >= 100 && numero % 1.0 == 0.0) numero / 100.0 else numero
+                )
+            }
+        } catch (_: Exception) {
+            "R$ $valor"
+        }
+    }
+}
+

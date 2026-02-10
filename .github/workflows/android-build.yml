@@ -19,13 +19,24 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Make gradlew executable
+      - name: Make gradlew executable (se existir)
         working-directory: android
-        run: chmod +x ./gradlew
+        run: |
+          if [ -f "./gradlew" ]; then
+            echo "✅ Encontrado gradlew, adicionando permissão de execução..."
+            chmod +x ./gradlew
+          else
+            echo "ℹ️ Arquivo gradlew não encontrado, será usado o Gradle global (comando 'gradle')"
+          fi
 
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew :app:assembleDebug
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew :app:assembleDebug
+          else
+            gradle :app:assembleDebug
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

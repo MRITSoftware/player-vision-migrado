@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Círculo simples branco com borda arredondada (ícone genérico) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,8
+            A46,46 0 1,1 53.9,8
+            Z" />
+
+    <!-- Letra M central em preto para MRIT -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M30,70 L30,35 L40,55 L54,35 L68,55 L78,35 L78,70 Z" />
+</vector>
+

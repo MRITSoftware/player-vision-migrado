@@ -39,6 +39,13 @@ jobs:
         packages: platform-tools platforms;android-33 build-tools;33.0.0
         accept-android-sdk-licenses: true
         
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        # AGP 8.2.2 é compatível com Gradle 8.x, não com 9.x
+        gradle-version: "8.7"
+        cache-read-only: false
+        
     - name: Instalar Capacitor CLI
       run: npm install -g @capacitor/cli
       

@@ -19,6 +19,13 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # AGP 8.2.2 é compatível com Gradle 8.x, não com 9.x
+          gradle-version: "8.7"
+          cache-read-only: false
+
       - name: Make gradlew executable (se existir)
         working-directory: android
         run: |

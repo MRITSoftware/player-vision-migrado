@@ -10,6 +10,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
 import android.widget.TextView
+import android.graphics.Paint
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import coil.load
@@ -464,6 +465,7 @@ class PlayerActivity : AppCompatActivity() {
 
         // Preços (formatar em pt-BR semelhante ao JS)
         promoOriginalPrice.text = formatarValorMonetario(promo.valorAntes)
+        promoOriginalPrice.paintFlags = promoOriginalPrice.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
         promoPrice.text = formatarValorMonetario(promo.valorPromo)
 
         // Contador

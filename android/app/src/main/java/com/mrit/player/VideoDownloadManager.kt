@@ -43,30 +43,48 @@ class VideoDownloadManager(
         // Download sequencial evita saturar rede/memória em playlists grandes.
         scope.launch {
             urls.forEach { mediaUrl ->
-                try {
-                    if (isFileMediaUrl(mediaUrl)) {
-                        ImageFileCache.cacheMedia(context, httpClient, mediaUrl)
-                        Log.d("VideoDownloadManager", "✅ Mídia pré-cachada em arquivo local: $mediaUrl")
-                    } else {
-                        val dataSpec = com.google.android.exoplayer2.upstream.DataSpec(
-                            android.net.Uri.parse(mediaUrl)
-                        )
-
-                        // CacheWriter vai ler do upstream e gravar no cache.
-                        val writer = CacheWriter(
-                            cacheDataSourceFactory.createDataSource(),
-                            dataSpec,
-                            null
-                        ) { _, _, _ -> /* progresso opcional */ }
-
-                        Log.d("VideoDownloadManager", "📥 Pré-cache de mídia: $mediaUrl")
-                        writer.cache()
-                        Log.d("VideoDownloadManager", "✅ Mídia pré-cachada: $mediaUrl")
-                    }
-                } catch (e: Exception) {
-                    Log.e("VideoDownloadManager", "❌ Erro ao pré-cachar mídia $mediaUrl", e)
-                }
+                preCacheSingleUrlInternal(mediaUrl, cacheDataSourceFactory)
             }
+        }
+    }
+
+    fun preCacheSingleUrl(mediaUrl: String) {
+        if (mediaUrl.isBlank()) return
+        val cache = VideoCache.get(context)
+        val upstream = DefaultHttpDataSource.Factory()
+        val cacheDataSourceFactory = CacheDataSource.Factory()
+            .setCache(cache)
+            .setUpstreamDataSourceFactory(upstream)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+        scope.launch {
+            preCacheSingleUrlInternal(mediaUrl, cacheDataSourceFactory)
+        }
+    }
+
+    private fun preCacheSingleUrlInternal(mediaUrl: String, cacheDataSourceFactory: CacheDataSource.Factory) {
+        try {
+            if (isFileMediaUrl(mediaUrl)) {
+                ImageFileCache.cacheMedia(context, httpClient, mediaUrl)
+                Log.d("VideoDownloadManager", "✅ Mídia pré-cachada em arquivo local: $mediaUrl")
+            } else {
+                val dataSpec = com.google.android.exoplayer2.upstream.DataSpec(
+                    android.net.Uri.parse(mediaUrl)
+                )
+
+                // CacheWriter vai ler do upstream e gravar no cache.
+                val writer = CacheWriter(
+                    cacheDataSourceFactory.createDataSource(),
+                    dataSpec,
+                    null
+                ) { _, _, _ -> /* progresso opcional */ }
+
+                Log.d("VideoDownloadManager", "📥 Pré-cache de mídia: $mediaUrl")
+                writer.cache()
+                Log.d("VideoDownloadManager", "✅ Mídia pré-cachada: $mediaUrl")
+            }
+        } catch (e: Exception) {
+            Log.e("VideoDownloadManager", "❌ Erro ao pré-cachar mídia $mediaUrl", e)
         }
     }
 

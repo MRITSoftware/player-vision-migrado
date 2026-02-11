@@ -517,6 +517,11 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
 
+        // Enquanto toca online, garante cache local desse item.
+        if (online && cachedFile == null) {
+            downloadManager.preCacheSingleUrl(url)
+        }
+
         isShowingVideo = true
         imageView.visibility = View.GONE
         playerView.visibility = View.VISIBLE
@@ -544,6 +549,10 @@ class PlayerActivity : AppCompatActivity() {
         val url = pickUrlForOrientation(item)
         applyFitForImage(item)
         val cachedFile = ImageFileCache.getCachedFile(this, url)
+
+        if (isOnline() && cachedFile == null) {
+            downloadManager.preCacheSingleUrl(url)
+        }
 
         // Mostrar a camada de imagem imediatamente evita "piscar preto".
         imageView.visibility = View.VISIBLE

@@ -1,6 +1,7 @@
 package com.mrit.player
 
 import android.content.Context
+import android.net.Uri
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -45,9 +46,9 @@ object ImageFileCache {
     }
 
     private fun buildFile(context: Context, url: String): File {
-        val folder = File(context.cacheDir, CACHE_DIR)
+        val folder = File(context.filesDir, CACHE_DIR)
         val extension = extensionFor(url)
-        return File(folder, "${sha256(url)}.$extension")
+        return File(folder, "${sha256(normalizeUrlKey(url))}.$extension")
     }
 
     private fun extensionFor(url: String): String {
@@ -63,5 +64,17 @@ object ImageFileCache {
     private fun sha256(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun normalizeUrlKey(url: String): String {
+        return runCatching {
+            val parsed = Uri.parse(url)
+            val scheme = parsed.scheme ?: "https"
+            val host = parsed.host?.lowercase() ?: ""
+            val path = parsed.path ?: ""
+            "$scheme://$host$path"
+        }.getOrElse {
+            url.substringBefore('?').substringBefore('#')
+        }
     }
 }

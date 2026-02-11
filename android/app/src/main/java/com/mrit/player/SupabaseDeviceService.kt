@@ -5,6 +5,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONObject
 
 data class ActiveDevice(
     val deviceId: String?,
@@ -51,17 +52,11 @@ class SupabaseDeviceService(
                 val arr = JSONArray(body)
                 if (arr.length() == 0) return@use null
                 val obj = arr.getJSONObject(0)
-                val codigoUnico = obj.optString("codigo_unico", null) ?: return@use null
+                val codigoUnico = optNullableString(obj, "codigo_unico") ?: return@use null
                 val isLocked = if (obj.isNull("is_locked")) null else obj.optBoolean("is_locked")
-                val codigoConteudoAtual = if (obj.has("codigo_conteudoAtual") && !obj.isNull("codigo_conteudoAtual")) {
-                    obj.optString("codigo_conteudoAtual", null)
-                } else null
-                val deviceId = if (obj.has("device_id") && !obj.isNull("device_id")) {
-                    obj.optString("device_id", null)
-                } else null
-                val deviceLastSeen = if (obj.has("device_last_seen") && !obj.isNull("device_last_seen")) {
-                    obj.optString("device_last_seen", null)
-                } else null
+                val codigoConteudoAtual = optNullableString(obj, "codigo_conteudoAtual")
+                val deviceId = optNullableString(obj, "device_id")
+                val deviceLastSeen = optNullableString(obj, "device_last_seen")
                 DisplayInfo(codigoUnico, isLocked, codigoConteudoAtual, deviceId, deviceLastSeen)
             }
         }.getOrNull()
@@ -88,12 +83,8 @@ class SupabaseDeviceService(
                 val arr = JSONArray(body)
                 if (arr.length() == 0) return@use null
                 val obj = arr.getJSONObject(0)
-                val devId = if (obj.has("device_id") && !obj.isNull("device_id")) {
-                    obj.optString("device_id", null)
-                } else null
-                val localNome = if (obj.has("local_nome") && !obj.isNull("local_nome")) {
-                    obj.optString("local_nome", null)
-                } else null
+                val devId = optNullableString(obj, "device_id")
+                val localNome = optNullableString(obj, "local_nome")
                 ActiveDevice(devId, localNome)
             }
         }.getOrNull()
@@ -213,6 +204,11 @@ class SupabaseDeviceService(
                 .build()
             httpClient.newCall(req).execute().use { }
         }
+    }
+
+    private fun optNullableString(obj: JSONObject, key: String): String? {
+        if (!obj.has(key) || obj.isNull(key)) return null
+        return obj.optString(key, "").ifBlank { null }
     }
 }
 

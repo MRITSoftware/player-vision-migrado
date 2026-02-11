@@ -3,6 +3,7 @@ package com.mrit.player
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONObject
 import java.net.URLEncoder
 
 data class ApiPlaylistItem(
@@ -33,7 +34,7 @@ class PlaylistService(
         requestArray(conteudoUrl)?.let { arr ->
             if (arr.length() > 0) {
                 val obj = arr.getJSONObject(0)
-                val urlItem = obj.optString("url", null)
+                val urlItem = optNullableString(obj, "url")
                 if (!urlItem.isNullOrBlank()) {
                     val tipo = obj.optString("tipo", "Vídeo")
                     val isImage = tipo.lowercase().contains("imagem") ||
@@ -43,10 +44,10 @@ class PlaylistService(
                             url = urlItem,
                             type = if (isImage) ItemType.IMAGE else ItemType.VIDEO,
                             durationMs = if (isImage) 0L else null, // imagem única fica estática
-                            fit = obj.optString("fit", null),
-                            focus = obj.optString("focus", null),
-                            urlPortrait = obj.optString("urlPortrait", null),
-                            urlLandscape = obj.optString("urlLandscape", null)
+                            fit = optNullableString(obj, "fit"),
+                            focus = optNullableString(obj, "focus"),
+                            urlPortrait = optNullableString(obj, "urlPortrait"),
+                            urlLandscape = optNullableString(obj, "urlLandscape")
                         )
                     )
                 }
@@ -60,7 +61,7 @@ class PlaylistService(
 
         for (i in 0 until json.length()) {
             val obj = json.getJSONObject(i)
-            val urlItem = obj.optString("url", null)
+            val urlItem = optNullableString(obj, "url")
             if (urlItem.isNullOrBlank()) continue
 
             val tipo = obj.optString("tipo", "Vídeo")
@@ -69,10 +70,10 @@ class PlaylistService(
 
             val duration = if (tipo.lowercase() == "imagem") 15000L else null
 
-            val fit = if (obj.has("fit") && !obj.isNull("fit")) obj.optString("fit", null) else null
-            val focus = if (obj.has("focus") && !obj.isNull("focus")) obj.optString("focus", null) else null
-            val urlPortrait = if (obj.has("urlPortrait") && !obj.isNull("urlPortrait")) obj.optString("urlPortrait", null) else null
-            val urlLandscape = if (obj.has("urlLandscape") && !obj.isNull("urlLandscape")) obj.optString("urlLandscape", null) else null
+            val fit = optNullableString(obj, "fit")
+            val focus = optNullableString(obj, "focus")
+            val urlPortrait = optNullableString(obj, "urlPortrait")
+            val urlLandscape = optNullableString(obj, "urlLandscape")
 
             result.add(
                 PlaylistItem(
@@ -105,6 +106,11 @@ class PlaylistService(
                 JSONArray(body)
             }
         }.getOrNull()
+    }
+
+    private fun optNullableString(obj: JSONObject, key: String): String? {
+        if (!obj.has(key) || obj.isNull(key)) return null
+        return obj.optString(key, "").ifBlank { null }
     }
 }
 

@@ -64,8 +64,8 @@ class PromotionService(
 
                 PromotionData(
                     idPromo = obj.opt("id_promo")?.toString() ?: idPromo,
-                    imagemUrl = obj.optString("imagem_promo", null),
-                    texto = obj.optString("texto_promo", null),
+                    imagemUrl = optNullableString(obj, "imagem_promo"),
+                    texto = optNullableString(obj, "texto_promo"),
                     valorAntes = obj.opt("valor_antes")?.toString(),
                     valorPromo = obj.opt("valor_promo")?.toString(),
                     contador = obj.optInt("contador", 0)
@@ -97,7 +97,7 @@ class PromotionService(
                 PromotionData(
                     idPromo = idPromo,
                     imagemUrl = null,
-                    texto = obj.optString("texto_promo", null),
+                    texto = optNullableString(obj, "texto_promo"),
                     valorAntes = obj.opt("valor_antes")?.toString(),
                     valorPromo = obj.opt("valor_promo")?.toString(),
                     contador = obj.optInt("contador", 0)
@@ -152,6 +152,11 @@ class PromotionService(
             }
             else -> null
         }
+    }
+
+    private fun optNullableString(obj: JSONObject, key: String): String? {
+        if (!obj.has(key) || obj.isNull(key)) return null
+        return obj.optString(key, "").ifBlank { null }
     }
 }
 

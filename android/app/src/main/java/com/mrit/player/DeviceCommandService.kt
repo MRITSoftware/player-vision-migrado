@@ -25,32 +25,34 @@ class DeviceCommandService(
     fun getPendingCommands(deviceId: String): List<DeviceCommand> {
         if (deviceId.isBlank()) return emptyList()
 
-        val url =
-            "$baseUrl/device_commands?device_id=eq.$deviceId&executed=eq.false&select=id,command&order=created_at.asc&limit=10"
+        return runCatching {
+            val url =
+                "$baseUrl/device_commands?device_id=eq.$deviceId&executed=eq.false&select=id,command&order=created_at.asc&limit=10"
 
-        val request = Request.Builder()
-            .url(url)
-            .header("apikey", SUPABASE_KEY)
-            .header("Authorization", "Bearer $SUPABASE_KEY")
-            .header("Accept", "application/json")
-            .get()
-            .build()
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Accept", "application/json")
+                .get()
+                .build()
 
-        httpClient.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return emptyList()
-            val body = resp.body?.string() ?: return emptyList()
-            val arr = JSONArray(body)
-            val result = mutableListOf<DeviceCommand>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                val id = obj.opt("id")?.toString() ?: continue
-                val cmd = obj.optString("command", "")
-                if (cmd.isNotBlank()) {
-                    result.add(DeviceCommand(id = id, command = cmd))
+            httpClient.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList()
+                val body = resp.body?.string() ?: return@use emptyList()
+                val arr = JSONArray(body)
+                val result = mutableListOf<DeviceCommand>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val id = obj.opt("id")?.toString() ?: continue
+                    val cmd = obj.optString("command", "")
+                    if (cmd.isNotBlank()) {
+                        result.add(DeviceCommand(id = id, command = cmd))
+                    }
                 }
+                result
             }
-            return result
-        }
+        }.getOrDefault(emptyList())
     }
 
     fun markExecuted(id: String) {

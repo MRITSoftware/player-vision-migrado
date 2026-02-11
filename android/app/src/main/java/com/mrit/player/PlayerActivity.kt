@@ -1,6 +1,7 @@
 package com.mrit.player
 
 import android.os.Bundle
+import android.net.ConnectivityManager
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -490,12 +491,21 @@ class PlayerActivity : AppCompatActivity() {
 
         val url = pickUrlForOrientation(item)
         applyFitForImage(item)
+        val cachedFile = ImageFileCache.getCachedFile(this, url)
 
         // Mostrar a camada de imagem imediatamente evita "piscar preto".
         imageView.visibility = View.VISIBLE
         playerView.visibility = View.GONE
-        imageView.load(url) {
+        imageView.load(cachedFile ?: url) {
             crossfade(false)
+            listener(
+                onError = { _, _ ->
+                    // Sem cache local e offline: segue o loop para não travar o player.
+                    if (!isOnline() && playlist.size > 1) {
+                        nextItem()
+                    }
+                }
+            )
         }
 
         imageView.removeCallbacks(nextRunnable)
@@ -732,6 +742,13 @@ class PlayerActivity : AppCompatActivity() {
     private fun atualizarRodapeAnoAtual() {
         val year = Calendar.getInstance().get(Calendar.YEAR)
         rodapeTexto.text = "\u00A9 $year MRIT"
+    }
+
+    private fun isOnline(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
+        val network = cm.activeNetwork ?: return false
+        val capabilities = cm.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }
 

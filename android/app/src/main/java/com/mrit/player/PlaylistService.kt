@@ -90,19 +90,21 @@ class PlaylistService(
     }
 
     private fun requestArray(url: String): JSONArray? {
-        val request = Request.Builder()
-            .url(url)
-            .header("apikey", SUPABASE_KEY)
-            .header("Authorization", "Bearer $SUPABASE_KEY")
-            .header("Accept", "application/json")
-            .get()
-            .build()
+        return runCatching {
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Accept", "application/json")
+                .get()
+                .build()
 
-        return httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return@use null
-            val body = response.body?.string() ?: "[]"
-            JSONArray(body)
-        }
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = response.body?.string() ?: "[]"
+                JSONArray(body)
+            }
+        }.getOrNull()
     }
 }
 

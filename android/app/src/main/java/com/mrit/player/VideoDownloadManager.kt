@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
 import com.google.android.exoplayer2.upstream.cache.CacheDataSource
 import com.google.android.exoplayer2.upstream.cache.CacheWriter
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -18,6 +19,7 @@ class VideoDownloadManager(
 ) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val httpClient = OkHttpClient()
 
     fun preCachePlaylist(playlist: List<PlaylistItem>) {
         if (playlist.isEmpty()) return
@@ -41,6 +43,12 @@ class VideoDownloadManager(
         urls.forEach { mediaUrl ->
             scope.launch {
                 try {
+                    if (isImageUrl(mediaUrl)) {
+                        ImageFileCache.cacheImage(context, httpClient, mediaUrl)
+                        Log.d("VideoDownloadManager", "✅ Imagem pré-cachada em arquivo local: $mediaUrl")
+                        return@launch
+                    }
+
                     val dataSpec = com.google.android.exoplayer2.upstream.DataSpec(
                         android.net.Uri.parse(mediaUrl)
                     )
@@ -61,6 +69,12 @@ class VideoDownloadManager(
                 }
             }
         }
+    }
+
+    private fun isImageUrl(url: String): Boolean {
+        return url.matches(
+            Regex(".*\\.(jpg|jpeg|png|webp|gif)(\\?.*)?$", RegexOption.IGNORE_CASE)
+        )
     }
 }
 

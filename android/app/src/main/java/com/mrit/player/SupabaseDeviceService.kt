@@ -33,66 +33,70 @@ class SupabaseDeviceService(
     fun getDisplay(codigo: String): DisplayInfo? {
         if (codigo.isBlank()) return null
 
-        val url =
-            "$baseUrl/displays?codigo_unico=eq.$codigo&select=codigo_unico,is_locked,codigo_conteudoAtual,device_id,device_last_seen&limit=1"
+        return runCatching {
+            val url =
+                "$baseUrl/displays?codigo_unico=eq.$codigo&select=codigo_unico,is_locked,codigo_conteudoAtual,device_id,device_last_seen&limit=1"
 
-        val request = Request.Builder()
-            .url(url)
-            .header("apikey", SUPABASE_KEY)
-            .header("Authorization", "Bearer $SUPABASE_KEY")
-            .header("Accept", "application/json")
-            .get()
-            .build()
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Accept", "application/json")
+                .get()
+                .build()
 
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val body = response.body?.string() ?: return null
-            val arr = JSONArray(body)
-            if (arr.length() == 0) return null
-            val obj = arr.getJSONObject(0)
-            val codigoUnico = obj.optString("codigo_unico", null) ?: return null
-            val isLocked = if (obj.isNull("is_locked")) null else obj.optBoolean("is_locked")
-            val codigoConteudoAtual = if (obj.has("codigo_conteudoAtual") && !obj.isNull("codigo_conteudoAtual")) {
-                obj.optString("codigo_conteudoAtual", null)
-            } else null
-            val deviceId = if (obj.has("device_id") && !obj.isNull("device_id")) {
-                obj.optString("device_id", null)
-            } else null
-            val deviceLastSeen = if (obj.has("device_last_seen") && !obj.isNull("device_last_seen")) {
-                obj.optString("device_last_seen", null)
-            } else null
-            return DisplayInfo(codigoUnico, isLocked, codigoConteudoAtual, deviceId, deviceLastSeen)
-        }
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = response.body?.string() ?: return@use null
+                val arr = JSONArray(body)
+                if (arr.length() == 0) return@use null
+                val obj = arr.getJSONObject(0)
+                val codigoUnico = obj.optString("codigo_unico", null) ?: return@use null
+                val isLocked = if (obj.isNull("is_locked")) null else obj.optBoolean("is_locked")
+                val codigoConteudoAtual = if (obj.has("codigo_conteudoAtual") && !obj.isNull("codigo_conteudoAtual")) {
+                    obj.optString("codigo_conteudoAtual", null)
+                } else null
+                val deviceId = if (obj.has("device_id") && !obj.isNull("device_id")) {
+                    obj.optString("device_id", null)
+                } else null
+                val deviceLastSeen = if (obj.has("device_last_seen") && !obj.isNull("device_last_seen")) {
+                    obj.optString("device_last_seen", null)
+                } else null
+                DisplayInfo(codigoUnico, isLocked, codigoConteudoAtual, deviceId, deviceLastSeen)
+            }
+        }.getOrNull()
     }
 
     fun getActiveDeviceForCodigo(codigo: String): ActiveDevice? {
         if (codigo.isBlank()) return null
 
-        val url =
-            "$baseUrl/dispositivos?codigo_display=eq.$codigo&is_ativo=eq.true&select=device_id,local_nome&limit=1"
+        return runCatching {
+            val url =
+                "$baseUrl/dispositivos?codigo_display=eq.$codigo&is_ativo=eq.true&select=device_id,local_nome&limit=1"
 
-        val request = Request.Builder()
-            .url(url)
-            .header("apikey", SUPABASE_KEY)
-            .header("Authorization", "Bearer $SUPABASE_KEY")
-            .header("Accept", "application/json")
-            .get()
-            .build()
+            val request = Request.Builder()
+                .url(url)
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Accept", "application/json")
+                .get()
+                .build()
 
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val body = response.body?.string() ?: return null
-            val arr = JSONArray(body)
-            if (arr.length() == 0) return null
-            val obj = arr.getJSONObject(0)
-            val devId = if (obj.has("device_id") && !obj.isNull("device_id")) {
-                obj.optString("device_id", null)
-            } else null
-            val localNome = if (obj.has("local_nome") && !obj.isNull("local_nome")) {
-                obj.optString("local_nome", null)
-            } else null
-            return ActiveDevice(devId, localNome)
-        }
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = response.body?.string() ?: return@use null
+                val arr = JSONArray(body)
+                if (arr.length() == 0) return@use null
+                val obj = arr.getJSONObject(0)
+                val devId = if (obj.has("device_id") && !obj.isNull("device_id")) {
+                    obj.optString("device_id", null)
+                } else null
+                val localNome = if (obj.has("local_nome") && !obj.isNull("local_nome")) {
+                    obj.optString("local_nome", null)
+                } else null
+                ActiveDevice(devId, localNome)
+            }
+        }.getOrNull()
     }
 
     /**

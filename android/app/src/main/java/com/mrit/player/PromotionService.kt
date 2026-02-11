@@ -21,53 +21,57 @@ class PromotionService(
     fun getPromotionForCodigo(codigo: String): PromotionData? {
         if (codigo.isBlank()) return null
 
-        // Buscar promo / id_promo no display
-        val displayReq = Request.Builder()
-            .url("$baseUrl/displays?codigo_unico=eq.$codigo&select=promo,id_promo&single")
-            .header("apikey", SUPABASE_KEY)
-            .header("Authorization", "Bearer $SUPABASE_KEY")
-            .header("Accept", "application/json")
-            .get()
-            .build()
+        return runCatching {
+            // Buscar promo / id_promo no display
+            val displayReq = Request.Builder()
+                .url("$baseUrl/displays?codigo_unico=eq.$codigo&select=promo,id_promo&single")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Accept", "application/json")
+                .get()
+                .build()
 
-        val display = httpClient.newCall(displayReq).execute().use { resp ->
-            if (!resp.isSuccessful) return null
-            val body = resp.body?.string() ?: return null
-            parseFirstObject(body) ?: return null
-        }
+            val display = httpClient.newCall(displayReq).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body?.string() ?: return@use null
+                parseFirstObject(body) ?: return@use null
+            } ?: return@runCatching null
 
-        val promoAtiva = display.optBoolean("promo", false)
-        val idPromo = display.opt("id_promo")?.toString()
-        if (!promoAtiva || idPromo.isNullOrBlank()) return null
+            val promoAtiva = display.optBoolean("promo", false)
+            val idPromo = display.opt("id_promo")?.toString()
+            if (!promoAtiva || idPromo.isNullOrBlank()) return@runCatching null
 
-        return getPromotionById(idPromo)
+            getPromotionById(idPromo)
+        }.getOrNull()
     }
 
     fun getPromotionById(idPromo: String): PromotionData? {
         if (idPromo.isBlank()) return null
 
-        val promoReq = Request.Builder()
-            .url("$baseUrl/promo?id_promo=eq.$idPromo&select=*&single")
-            .header("apikey", SUPABASE_KEY)
-            .header("Authorization", "Bearer $SUPABASE_KEY")
-            .header("Accept", "application/json")
-            .get()
-            .build()
+        return runCatching {
+            val promoReq = Request.Builder()
+                .url("$baseUrl/promo?id_promo=eq.$idPromo&select=*&single")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Accept", "application/json")
+                .get()
+                .build()
 
-        return httpClient.newCall(promoReq).execute().use { resp ->
-            if (!resp.isSuccessful) return@use null
-            val body = resp.body?.string() ?: return@use null
-            val obj = parseFirstObject(body) ?: return@use null
+            httpClient.newCall(promoReq).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body?.string() ?: return@use null
+                val obj = parseFirstObject(body) ?: return@use null
 
-            PromotionData(
-                idPromo = obj.opt("id_promo")?.toString() ?: idPromo,
-                imagemUrl = obj.optString("imagem_promo", null),
-                texto = obj.optString("texto_promo", null),
-                valorAntes = obj.opt("valor_antes")?.toString(),
-                valorPromo = obj.opt("valor_promo")?.toString(),
-                contador = obj.optInt("contador", 0)
-            )
-        }
+                PromotionData(
+                    idPromo = obj.opt("id_promo")?.toString() ?: idPromo,
+                    imagemUrl = obj.optString("imagem_promo", null),
+                    texto = obj.optString("texto_promo", null),
+                    valorAntes = obj.opt("valor_antes")?.toString(),
+                    valorPromo = obj.opt("valor_promo")?.toString(),
+                    contador = obj.optInt("contador", 0)
+                )
+            }
+        }.getOrNull()
     }
 
     /**
@@ -76,28 +80,30 @@ class PromotionService(
     fun getPromotionCounterAndTexts(idPromo: String): PromotionData? {
         if (idPromo.isBlank()) return null
 
-        val promoReq = Request.Builder()
-            .url("$baseUrl/promo?id_promo=eq.$idPromo&select=contador,texto_promo,valor_antes,valor_promo&single")
-            .header("apikey", SUPABASE_KEY)
-            .header("Authorization", "Bearer $SUPABASE_KEY")
-            .header("Accept", "application/json")
-            .get()
-            .build()
+        return runCatching {
+            val promoReq = Request.Builder()
+                .url("$baseUrl/promo?id_promo=eq.$idPromo&select=contador,texto_promo,valor_antes,valor_promo&single")
+                .header("apikey", SUPABASE_KEY)
+                .header("Authorization", "Bearer $SUPABASE_KEY")
+                .header("Accept", "application/json")
+                .get()
+                .build()
 
-        return httpClient.newCall(promoReq).execute().use { resp ->
-            if (!resp.isSuccessful) return@use null
-            val body = resp.body?.string() ?: return@use null
-            val obj = parseFirstObject(body) ?: return@use null
+            httpClient.newCall(promoReq).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body?.string() ?: return@use null
+                val obj = parseFirstObject(body) ?: return@use null
 
-            PromotionData(
-                idPromo = idPromo,
-                imagemUrl = null,
-                texto = obj.optString("texto_promo", null),
-                valorAntes = obj.opt("valor_antes")?.toString(),
-                valorPromo = obj.opt("valor_promo")?.toString(),
-                contador = obj.optInt("contador", 0)
-            )
-        }
+                PromotionData(
+                    idPromo = idPromo,
+                    imagemUrl = null,
+                    texto = obj.optString("texto_promo", null),
+                    valorAntes = obj.opt("valor_antes")?.toString(),
+                    valorPromo = obj.opt("valor_promo")?.toString(),
+                    contador = obj.optInt("contador", 0)
+                )
+            }
+        }.getOrNull()
     }
 
     /**

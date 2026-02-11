@@ -40,30 +40,29 @@ class VideoDownloadManager(
                 .forEach { urls.add(it) }
         }
 
-        urls.forEach { mediaUrl ->
-            scope.launch {
+        // Download sequencial evita saturar rede/memória em playlists grandes.
+        scope.launch {
+            urls.forEach { mediaUrl ->
                 try {
                     if (isFileMediaUrl(mediaUrl)) {
                         ImageFileCache.cacheMedia(context, httpClient, mediaUrl)
                         Log.d("VideoDownloadManager", "✅ Mídia pré-cachada em arquivo local: $mediaUrl")
-                        return@launch
+                    } else {
+                        val dataSpec = com.google.android.exoplayer2.upstream.DataSpec(
+                            android.net.Uri.parse(mediaUrl)
+                        )
+
+                        // CacheWriter vai ler do upstream e gravar no cache.
+                        val writer = CacheWriter(
+                            cacheDataSourceFactory.createDataSource(),
+                            dataSpec,
+                            null
+                        ) { _, _, _ -> /* progresso opcional */ }
+
+                        Log.d("VideoDownloadManager", "📥 Pré-cache de mídia: $mediaUrl")
+                        writer.cache()
+                        Log.d("VideoDownloadManager", "✅ Mídia pré-cachada: $mediaUrl")
                     }
-
-                    val dataSpec = com.google.android.exoplayer2.upstream.DataSpec(
-                        android.net.Uri.parse(mediaUrl)
-                    )
-
-                    // CacheWriter vai ler do upstream e gravar no cache.
-                    val writer = CacheWriter(
-                        cacheDataSourceFactory.createDataSource(),
-                        dataSpec,
-                        null
-                    ) { _, _, _ -> /* progresso opcional */ }
-
-                    Log.d("VideoDownloadManager", "📥 Pré-cache de mídia: $mediaUrl")
-                    writer.cache()
-                    Log.d("VideoDownloadManager", "✅ Mídia pré-cachada: $mediaUrl")
-
                 } catch (e: Exception) {
                     Log.e("VideoDownloadManager", "❌ Erro ao pré-cachar mídia $mediaUrl", e)
                 }

@@ -20,6 +20,7 @@ object ImageFileCache {
 
     fun cacheMedia(context: Context, httpClient: OkHttpClient, url: String) {
         val target = buildFile(context, url)
+        if (target.exists() && target.length() > 0L) return
         val tmp = File(target.parentFile, "${target.name}.tmp")
 
         val request = Request.Builder()
@@ -29,9 +30,14 @@ object ImageFileCache {
 
         httpClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) return
-            val bytes = resp.body?.bytes() ?: return
+            val body = resp.body ?: return
             target.parentFile?.mkdirs()
-            tmp.writeBytes(bytes)
+            body.byteStream().use { input ->
+                tmp.outputStream().use { output ->
+                    input.copyTo(output, DEFAULT_BUFFER_SIZE)
+                    output.flush()
+                }
+            }
             if (!tmp.renameTo(target)) {
                 tmp.delete()
             }

@@ -13,7 +13,8 @@ data class ActiveDevice(
 
 data class DisplayInfo(
     val codigoUnico: String,
-    val isLocked: Boolean?
+    val isLocked: Boolean?,
+    val codigoConteudoAtual: String?
 )
 
 /**
@@ -31,7 +32,7 @@ class SupabaseDeviceService(
         if (codigo.isBlank()) return null
 
         val url =
-            "$baseUrl/displays?codigo_unico=eq.$codigo&select=codigo_unico,is_locked&limit=1"
+            "$baseUrl/displays?codigo_unico=eq.$codigo&select=codigo_unico,is_locked,codigo_conteudoAtual&limit=1"
 
         val request = Request.Builder()
             .url(url)
@@ -49,7 +50,10 @@ class SupabaseDeviceService(
             val obj = arr.getJSONObject(0)
             val codigoUnico = obj.optString("codigo_unico", null) ?: return null
             val isLocked = if (obj.isNull("is_locked")) null else obj.optBoolean("is_locked")
-            return DisplayInfo(codigoUnico, isLocked)
+            val codigoConteudoAtual = if (obj.has("codigo_conteudoAtual") && !obj.isNull("codigo_conteudoAtual")) {
+                obj.optString("codigo_conteudoAtual", null)
+            } else null
+            return DisplayInfo(codigoUnico, isLocked, codigoConteudoAtual)
         }
     }
 

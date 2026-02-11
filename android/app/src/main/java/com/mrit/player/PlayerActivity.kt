@@ -37,6 +37,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private lateinit var playerView: PlayerView
     private lateinit var imageView: ImageView
+    private lateinit var codigoScreenContainer: LinearLayout
     private lateinit var logoContainer: LinearLayout
     private lateinit var codigoInputContainer: LinearLayout
     private lateinit var rodapeContainer: LinearLayout
@@ -62,6 +63,7 @@ class PlayerActivity : AppCompatActivity() {
     private var deviceCommandJob: Job? = null
     private var currentPlaylistSignature: String? = null
     private var currentCodigo: String? = null
+    private var currentCodigoConteudo: String? = null
     private var currentPromotion: PromotionData? = null
 
     private val nextRunnable = Runnable {
@@ -76,6 +78,7 @@ class PlayerActivity : AppCompatActivity() {
 
         playerView = findViewById(R.id.videoView)
         imageView = findViewById(R.id.imageView)
+        codigoScreenContainer = findViewById(R.id.codigoScreenContainer)
         logoContainer = findViewById(R.id.logoContainer)
         codigoInputContainer = findViewById(R.id.codigoInputContainer)
         rodapeContainer = findViewById(R.id.rodapeContainer)
@@ -163,11 +166,28 @@ class PlayerActivity : AppCompatActivity() {
                 salvarCodigoLocal(codigo)
                 currentCodigo = codigo
                 aplicarEstadoComCodigo(codigo)
+
+                val codigoConteudo = withContext(Dispatchers.IO) {
+                    deviceService.getDisplay(codigo)?.codigoConteudoAtual?.trim()
+                }
+
+                if (codigoConteudo.isNullOrBlank()) {
+                    // Sem conteúdo configurado para este display: evitar "tela preta".
+                    Toast.makeText(
+                        ctx,
+                        "Esta tela ainda não tem conteúdo configurado.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    pararTudoMostrarLogin(limparCodigoSalvo = false)
+                    return@launch
+                }
+
+                currentCodigoConteudo = codigoConteudo
                 // Marcar display em uso e iniciar heartbeat
                 iniciarHeartbeat(codigo)
                 iniciarWatchDePromocao(codigo)
                 iniciarWatchDeComandos()
-                carregarPlaylistDoBackend(codigo)
+                carregarPlaylistDoBackend(codigoConteudo)
             }
         }
     }
@@ -187,6 +207,22 @@ class PlayerActivity : AppCompatActivity() {
             // Heartbeat periódico
             while (isActive) {
                 delay(30000) // 30s
+                val display = withContext(Dispatchers.IO) {
+                    service.getDisplay(codigo)
+                }
+
+                // Se destravou no painel (is_locked=false), parar player e voltar à tela de código.
+                if (display == null || display.isLocked == false) {
+                    pararTudoMostrarLogin(limparCodigoSalvo = true)
+                    break
+                }
+
+                val novoCodigoConteudo = display.codigoConteudoAtual?.trim()
+                if (!novoCodigoConteudo.isNullOrBlank() && novoCodigoConteudo != currentCodigoConteudo) {
+                    currentCodigoConteudo = novoCodigoConteudo
+                    carregarPlaylistDoBackend(novoCodigoConteudo)
+                }
+
                 withContext(Dispatchers.IO) {
                     service.enviarHeartbeat(codigo, deviceId)
                 }
@@ -203,12 +239,14 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun aplicarEstadoComCodigo(codigo: String) {
         // Esconder "tela de login" e deixar player full
+        codigoScreenContainer.visibility = View.GONE
         codigoInputContainer.visibility = View.GONE
         rodapeContainer.visibility = View.GONE
         logoContainer.visibility = View.GONE
 
-        playerView.visibility = View.VISIBLE
-        imageView.visibility = View.VISIBLE
+        // Só exibe vídeo/imagem quando houver item tocando para evitar tela preta
+        playerView.visibility = View.GONE
+        imageView.visibility = View.GONE
 
         // Atualizar texto de rodapé se quiser (ex: mostrar o código/local)
         rodapeTexto.text = "Código: $codigo"
@@ -216,6 +254,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun aplicarEstadoSemCodigo() {
         // Mostrar tela de entrada de código
+        codigoScreenContainer.visibility = View.VISIBLE
         codigoInputContainer.visibility = View.VISIBLE
         rodapeContainer.visibility = View.VISIBLE
         logoContainer.visibility = View.VISIBLE
@@ -238,6 +277,7 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         currentCodigo = null
+        currentCodigoConteudo = null
         currentPromotion = null
         promoOverlay.visibility = View.GONE
     }
@@ -274,6 +314,13 @@ class PlayerActivity : AppCompatActivity() {
             val itens = withContext(Dispatchers.IO) {
                 service.carregarPlaylist(codigoConteudo)
             }
+
+            if (itens.isEmpty()) {
+                // Sem itens -> manter UI de código, evitando ficar em preto sem feedback.
+                pararTudoMostrarLogin(limparCodigoSalvo = false)
+                return@launch
+            }
+
             playlist.clear()
             playlist.addAll(itens)
             currentPlaylistSignature = buildPlaylistSignature(playlist)
@@ -299,7 +346,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun iniciarWatchDePlaylist(codigoConteudo: String) {
-        if (playlistWatchJob?.isActive == true) return
+        playlistWatchJob?.cancel()
 
         val service = PlaylistService()
         playlistWatchJob = lifecycleScope.launch {
@@ -308,8 +355,12 @@ class PlayerActivity : AppCompatActivity() {
                 val novosItens = withContext(Dispatchers.IO) {
                     service.carregarPlaylist(codigoConteudo)
                 }
+                if (novosItens.isEmpty()) {
+                    pararTudoMostrarLogin(limparCodigoSalvo = false)
+                    break
+                }
                 val novaAssinatura = buildPlaylistSignature(novosItens)
-                if (novosItens.isNotEmpty() && novaAssinatura != currentPlaylistSignature) {
+                if (novaAssinatura != currentPlaylistSignature) {
                     playlist.clear()
                     playlist.addAll(novosItens)
                     currentPlaylistSignature = novaAssinatura
@@ -397,6 +448,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun nextItem() {
+        if (playlist.isEmpty()) return
         currentIndex = (currentIndex + 1) % playlist.size
         playLoop()
     }
@@ -541,6 +593,13 @@ class PlayerActivity : AppCompatActivity() {
                                 }
                                 return@launch // Sair após processar restart
                             }
+                            "stop_player" -> {
+                                withContext(Dispatchers.IO) {
+                                    service.markExecuted(comando.id)
+                                }
+                                pararTudoMostrarLogin(limparCodigoSalvo = true)
+                                return@launch
+                            }
                             else -> {
                                 // Outros comandos podem ser adicionados aqui
                                 // Marcar como executado mesmo assim
@@ -555,6 +614,30 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun limparCodigoLocal() {
+        val prefs = getSharedPreferences("mrit_prefs", MODE_PRIVATE)
+        prefs.edit().remove("display_codigo").apply()
+    }
+
+    private fun pararTudoMostrarLogin(limparCodigoSalvo: Boolean) {
+        imageView.removeCallbacks(nextRunnable)
+        exoPlayer?.stop()
+        exoPlayer?.clearMediaItems()
+        imageView.setImageDrawable(null)
+        playlist.clear()
+        currentIndex = 0
+        currentPlaylistSignature = null
+        currentPromotion = null
+        promoOverlay.visibility = View.GONE
+
+        if (limparCodigoSalvo) {
+            limparCodigoLocal()
+            codigoEditText.setText("")
+        }
+
+        aplicarEstadoSemCodigo()
     }
 }
 

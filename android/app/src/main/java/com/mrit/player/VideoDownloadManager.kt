@@ -43,9 +43,9 @@ class VideoDownloadManager(
         urls.forEach { mediaUrl ->
             scope.launch {
                 try {
-                    if (isImageUrl(mediaUrl)) {
-                        ImageFileCache.cacheImage(context, httpClient, mediaUrl)
-                        Log.d("VideoDownloadManager", "✅ Imagem pré-cachada em arquivo local: $mediaUrl")
+                    if (isFileMediaUrl(mediaUrl)) {
+                        ImageFileCache.cacheMedia(context, httpClient, mediaUrl)
+                        Log.d("VideoDownloadManager", "✅ Mídia pré-cachada em arquivo local: $mediaUrl")
                         return@launch
                     }
 
@@ -71,9 +71,12 @@ class VideoDownloadManager(
         }
     }
 
-    private fun isImageUrl(url: String): Boolean {
+    private fun isFileMediaUrl(url: String): Boolean {
         return url.matches(
-            Regex(".*\\.(jpg|jpeg|png|webp|gif)(\\?.*)?$", RegexOption.IGNORE_CASE)
+            Regex(
+                ".*\\.(jpg|jpeg|png|webp|gif|mp4|webm|mkv|mov|avi|m4v|3gp|flv|wmv)(\\?.*)?$",
+                RegexOption.IGNORE_CASE
+            )
         )
     }
 }

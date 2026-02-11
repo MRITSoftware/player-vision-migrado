@@ -7,7 +7,7 @@ import java.io.File
 import java.security.MessageDigest
 
 object ImageFileCache {
-    private const val CACHE_DIR = "image_cache"
+    private const val CACHE_DIR = "media_file_cache"
 
     fun getCachedFile(context: Context, url: String): File? {
         val file = buildFile(context, url)
@@ -15,6 +15,10 @@ object ImageFileCache {
     }
 
     fun cacheImage(context: Context, httpClient: OkHttpClient, url: String) {
+        cacheMedia(context, httpClient, url)
+    }
+
+    fun cacheMedia(context: Context, httpClient: OkHttpClient, url: String) {
         val target = buildFile(context, url)
         val tmp = File(target.parentFile, "${target.name}.tmp")
 
@@ -44,7 +48,8 @@ object ImageFileCache {
         val clean = url.substringBefore('?').substringBefore('#')
         val ext = clean.substringAfterLast('.', "").lowercase()
         return when (ext) {
-            "jpg", "jpeg", "png", "webp", "gif" -> ext
+            "jpg", "jpeg", "png", "webp", "gif",
+            "mp4", "webm", "mkv", "mov", "avi", "m4v", "3gp", "flv", "wmv" -> ext
             else -> "img"
         }
     }

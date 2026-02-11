@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import coil.load
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.source.DefaultMediaSourceFactory
 import com.google.android.exoplayer2.upstream.DataSource
@@ -291,6 +292,15 @@ class PlayerActivity : AppCompatActivity() {
                         nextItem()
                     }
                 }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    // Em falha (comum offline sem cache), segue para o próximo item
+                    // para evitar tela preta/travamento da exibição.
+                    imageView.removeCallbacks(nextRunnable)
+                    if (playlist.size > 1) {
+                        nextItem()
+                    }
+                }
             })
         }
     }
@@ -474,8 +484,20 @@ class PlayerActivity : AppCompatActivity() {
 
         val url = pickUrlForOrientation(item)
         applyFitForVideo(item)
+        val cachedFile = ImageFileCache.getCachedFile(this, url)
+        val playUri = if (cachedFile != null) {
+            android.net.Uri.fromFile(cachedFile).toString()
+        } else {
+            url
+        }
 
-        val mediaItem = MediaItem.fromUri(url)
+        // Se estiver offline e for mídia de arquivo sem cache local, pular item para não travar em preto.
+        if (!isOnline() && cachedFile == null && isDirectFileMediaUrl(url) && playlist.size > 1) {
+            nextItem()
+            return
+        }
+
+        val mediaItem = MediaItem.fromUri(playUri)
         exoPlayer?.setMediaItem(mediaItem)
         exoPlayer?.prepare()
         exoPlayer?.playWhenReady = true
@@ -749,6 +771,15 @@ class PlayerActivity : AppCompatActivity() {
         val network = cm.activeNetwork ?: return false
         val capabilities = cm.getNetworkCapabilities(network) ?: return false
         return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun isDirectFileMediaUrl(url: String): Boolean {
+        return url.matches(
+            Regex(
+                ".*\\.(mp4|webm|mkv|mov|avi|m4v|3gp|flv|wmv|jpg|jpeg|png|webp|gif)(\\?.*)?$",
+                RegexOption.IGNORE_CASE
+            )
+        )
     }
 }
 

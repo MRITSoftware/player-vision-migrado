@@ -380,6 +380,36 @@ function cacheKeyFor(codigo) {
   return `playlist_cache_${codigo}`;
 }
 
+async function postMessageToServiceWorker(message, waitForReady = true) {
+  if (!('serviceWorker' in navigator)) return false;
+
+  const send = (sw) => {
+    try {
+      if (!sw) return false;
+      sw.postMessage(message);
+      return true;
+    } catch (err) {
+      console.warn("⚠️ Falha ao enviar mensagem para Service Worker:", err);
+      return false;
+    }
+  };
+
+  if (send(navigator.serviceWorker.controller)) return true;
+  if (!waitForReady) return false;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    return (
+      send(registration.active) ||
+      send(registration.waiting) ||
+      send(registration.installing)
+    );
+  } catch (err) {
+    console.warn("⚠️ Service Worker ainda não pronto para receber mensagens");
+    return false;
+  }
+}
+
 // ===== Atualização de Status do Cache =====
 async function atualizarStatusCache(codigo, status) {
   if (!codigo || !navigator.onLine) return;
@@ -403,7 +433,7 @@ async function atualizarStatusCache(codigo, status) {
 }
 
 // ===== Verificação e Validação do Cache =====
-async function verificarEAtualizarStatusCache() {
+async function verificarEAtualizarStatusCache(skipForcarCache = false) {
   if (!codigoAtual || !playlist || playlist.length === 0) {
     await atualizarStatusCache(codigoAtual, false);
     return false;
@@ -458,32 +488,32 @@ async function verificarEAtualizarStatusCache() {
       }
     }
     
-    // Calcular percentual de cache
+    const totalCacheaveis = totalVideos + totalImagens;
+    const totalEmCache = videosEmCache + imagensEmCache;
+
+    // Regra estrita: só fica pronto quando 100% dos itens cacheáveis da playlist atual
+    // (vídeos + imagens em exibição) estiverem em cache local.
+    const cachePronto = totalCacheaveis > 0 && totalEmCache === totalCacheaveis;
     const percentualVideos = totalVideos > 0 ? (videosEmCache / totalVideos) * 100 : 100;
     const percentualImagens = totalImagens > 0 ? (imagensEmCache / totalImagens) * 100 : 100;
-    
-    // Cache está pronto se 80% dos vídeos OU 80% das imagens estão em cache
-    const cachePronto = percentualVideos >= 80 || percentualImagens >= 80;
+    const percentualTotal = totalCacheaveis > 0 ? (totalEmCache / totalCacheaveis) * 100 : 0;
     
     console.log(`📊 Cache de Vídeos: ${videosEmCache}/${totalVideos} (${percentualVideos.toFixed(1)}%)`);
     console.log(`📊 Cache de Imagens: ${imagensEmCache}/${totalImagens} (${percentualImagens.toFixed(1)}%)`);
+    console.log(`📊 Cache total: ${totalEmCache}/${totalCacheaveis} (${percentualTotal.toFixed(1)}%)`);
     console.log(`📊 Status: ${cachePronto ? '✅ Pronto' : '❌ Não pronto'}`);
     
-    // Se há vídeos faltando, forçar cache direto
-    if (videosFaltando.length > 0) {
-      console.log("🔄 Vídeos faltando no cache, forçando cache direto...");
-      const resultado = await mritDebug.forcarCacheDireto();
-      if (resultado && resultado.cachedCount > 0) {
-        console.log("✅ Cache direto concluído com sucesso");
-        // Verificar novamente após cache direto
-        return await verificarEAtualizarStatusCache();
+    // Tenta preencher faltantes e só então revalida 1x.
+    if (!skipForcarCache && (videosFaltando.length > 0 || imagensFaltando.length > 0)) {
+      if (videosFaltando.length > 0) {
+        console.log("🔄 Vídeos faltando no cache, forçando cache direto...");
+        await mritDebug.forcarCacheDireto();
       }
-    }
-    
-    // Se há imagens faltando, forçar cache de imagens
-    if (imagensFaltando.length > 0) {
-      console.log("🔄 Imagens faltando no cache, forçando cache de imagens...");
-      await mritDebug.forcarCacheImagens();
+      if (imagensFaltando.length > 0) {
+        console.log("🔄 Imagens faltando no cache, forçando cache de imagens...");
+        await mritDebug.forcarCacheImagens();
+      }
+      return await verificarEAtualizarStatusCache(true);
     }
     
     // Atualizar status no banco
@@ -709,13 +739,12 @@ async function verificarCodigoSalvo() {
             console.log("💾 Código e local salvos no localStorage:", codigoDisplay, localNome);
             
             // Configurar namespace no Service Worker IMEDIATAMENTE para usar cache correto
-            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-              navigator.serviceWorker.controller.postMessage({
-                action: "setNamespace",
-                namespace: codigoDisplay
-              });
-              console.log("📦 Namespace configurado no Service Worker:", codigoDisplay);
-            }
+            postMessageToServiceWorker({
+              action: "setNamespace",
+              namespace: codigoDisplay
+            }).then((ok) => {
+              if (ok) console.log("📦 Namespace configurado no Service Worker:", codigoDisplay);
+            });
             
             // Esconder elementos de login IMEDIATAMENTE (sem delay para não aparecer brevemente)
             const inputDiv = document.getElementById("codigoInput");
@@ -927,13 +956,13 @@ async function verificarCodigoSalvo() {
               }
               
               // Configurar namespace no Service Worker IMEDIATAMENTE para usar cache correto
-              if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                navigator.serviceWorker.controller.postMessage({
-                  action: "setNamespace",
-                  namespace: codigoSalvo.trim().toUpperCase()
-                });
-                console.log("📦 Namespace configurado no Service Worker:", codigoSalvo.trim().toUpperCase());
-              }
+              const ns = codigoSalvo.trim().toUpperCase();
+              postMessageToServiceWorker({
+                action: "setNamespace",
+                namespace: ns
+              }).then((ok) => {
+                if (ok) console.log("📦 Namespace configurado no Service Worker:", ns);
+              });
               
               // Esconder elementos de login IMEDIATAMENTE (sem delay para não aparecer brevemente)
               const inputDiv = document.getElementById("codigoInput");
@@ -1191,13 +1220,12 @@ async function iniciar() {
   codigoAtual = codigo;
   
   // Configurar namespace no Service Worker IMEDIATAMENTE para usar cache correto
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      action: "setNamespace",
-      namespace: codigoAtual
-    });
-    console.log("📦 Namespace configurado no Service Worker:", codigoAtual);
-  }
+  postMessageToServiceWorker({
+    action: "setNamespace",
+    namespace: codigoAtual
+  }).then((ok) => {
+    if (ok) console.log("📦 Namespace configurado no Service Worker:", codigoAtual);
+  });
   
   // Salvar código e local no localStorage para uso futuro
   localStorage.setItem(CODIGO_DISPLAY_KEY, codigo);
@@ -1404,13 +1432,12 @@ async function iniciar() {
       currentContentCode = codigo;
       
       // Configurar namespace no Service Worker para usar cache correto
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          action: "setNamespace",
-          namespace: codigoAtual
-        });
-        console.log("📦 Namespace configurado no Service Worker (offline):", codigoAtual);
-      }
+      postMessageToServiceWorker({
+        action: "setNamespace",
+        namespace: codigoAtual
+      }).then((ok) => {
+        if (ok) console.log("📦 Namespace configurado no Service Worker (offline):", codigoAtual);
+      });
       
       // Configurar realtime se for playlist
       if (currentPlaylistId) {
@@ -1598,12 +1625,10 @@ async function carregarConteudo(codigoConteudo) {
           console.log("📦 Cache encontrado! Carregando playlist do cache:", data.playlist.length, "itens");
           
           // Configurar namespace no Service Worker para usar o cache correto
-          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-              action: "setNamespace",
-              namespace: codigoAtual
-            });
-          }
+          postMessageToServiceWorker({
+            action: "setNamespace",
+            namespace: codigoAtual
+          }).catch(() => {});
           
           // Carregar playlist do cache imediatamente
           const cachedPlaylistId = data.codigo || null;
@@ -1960,18 +1985,17 @@ async function salvarCache(playlistData, codigo) {
   // cache namespaced por código
   localStorage.setItem(cacheKeyFor(codigo), JSON.stringify({ playlist: playlistData, codigo }));
 
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    console.log("📤 Enviando playlist para Service Worker:", playlistData.length, "itens");
-    navigator.serviceWorker.controller.postMessage({
-      action: "updateCache",
-      playlist: playlistData
-    });
-  } else {
+  console.log("📤 Enviando playlist para Service Worker:", playlistData.length, "itens");
+  const sent = await postMessageToServiceWorker({
+    action: "updateCache",
+    playlist: playlistData
+  });
+  if (!sent) {
     console.warn("⚠️ Service Worker não disponível para cache automático");
   }
   
-  // Atualizar status do cache na tabela displays
-  await atualizarStatusCache(codigo, true);
+  // Ao receber nova playlist, marcar como não pronto até a validação estrita completar.
+  await atualizarStatusCache(codigo, false);
 }
 
 // Reset agressivo quando entra com um novo código
@@ -3669,6 +3693,22 @@ if ('serviceWorker' in navigator) {
       console.log('✅ Service Worker registrado:', registration.scope);
       await navigator.serviceWorker.ready;
       console.log('✅ Service Worker pronto para uso');
+
+      if (codigoAtual) {
+        await postMessageToServiceWorker({ action: "setNamespace", namespace: codigoAtual });
+      }
+      if (playlist && playlist.length > 0) {
+        await postMessageToServiceWorker({ action: "updateCache", playlist });
+      }
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (codigoAtual) {
+          postMessageToServiceWorker({ action: "setNamespace", namespace: codigoAtual }).catch(() => {});
+        }
+        if (playlist && playlist.length > 0) {
+          postMessageToServiceWorker({ action: "updateCache", playlist }).catch(() => {});
+        }
+      });
       
       navigator.serviceWorker.addEventListener('message', event => {
         if (event.data.action === "checkItem") {
@@ -3680,9 +3720,9 @@ if ('serviceWorker' in navigator) {
           event.ports[0].postMessage({ valid: isValid });
         } else if (event.data.action === "cacheUpdated") {
           console.log("📦 Cache atualizado pelo Service Worker");
-          // Atualizar status do cache no banco
-          if (codigoAtual) {
-            atualizarStatusCache(codigoAtual, true);
+          // Só subir status quando a validação estrita (100%) confirmar.
+          if (codigoAtual && playlist && playlist.length > 0) {
+            verificarEAtualizarStatusCache(true).catch(() => {});
           }
         }
       });
@@ -4699,9 +4739,9 @@ window.mritDebug = {
     
     console.log(`🎉 Cache concluído: ${cachedCount} vídeos armazenados, ${failedCount} falharam`);
     
-    // Atualizar status do cache no banco
-    if (cachedCount > 0) {
-      await atualizarStatusCache(codigoAtual, true);
+    // Não marcar pronto aqui; a validação estrita decide quando subir para true.
+    if (codigoAtual) {
+      await verificarEAtualizarStatusCache(true);
     }
     
     return { cachedCount, failedCount };

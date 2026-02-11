@@ -9,7 +9,7 @@ import java.io.File
 object VideoCache {
 
     private const val CACHE_FOLDER = "video_cache"
-    private const val CACHE_SIZE_BYTES = 512L * 1024L * 1024L // 512MB
+    private const val CACHE_SIZE_BYTES = 5L * 1024L * 1024L * 1024L // 5GB
 
     @Volatile
     private var simpleCache: SimpleCache? = null

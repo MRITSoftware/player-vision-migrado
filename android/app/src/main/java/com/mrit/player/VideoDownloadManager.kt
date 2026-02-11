@@ -29,11 +29,20 @@ class VideoDownloadManager(
             .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
-        playlist.filter { it.type == ItemType.VIDEO }.forEach { item ->
+        val urls = linkedSetOf<String>()
+        playlist.forEach { item ->
+            listOf(item.url, item.urlPortrait, item.urlLandscape)
+                .filterNotNull()
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .forEach { urls.add(it) }
+        }
+
+        urls.forEach { mediaUrl ->
             scope.launch {
                 try {
                     val dataSpec = com.google.android.exoplayer2.upstream.DataSpec(
-                        android.net.Uri.parse(item.url)
+                        android.net.Uri.parse(mediaUrl)
                     )
 
                     // CacheWriter vai ler do upstream e gravar no cache.
@@ -43,12 +52,12 @@ class VideoDownloadManager(
                         null
                     ) { _, _, _ -> /* progresso opcional */ }
 
-                    Log.d("VideoDownloadManager", "📥 Pré-cache de vídeo: ${item.url}")
+                    Log.d("VideoDownloadManager", "📥 Pré-cache de mídia: $mediaUrl")
                     writer.cache()
-                    Log.d("VideoDownloadManager", "✅ Vídeo pré-cachado: ${item.url}")
+                    Log.d("VideoDownloadManager", "✅ Mídia pré-cachada: $mediaUrl")
 
                 } catch (e: Exception) {
-                    Log.e("VideoDownloadManager", "❌ Erro ao pré-cachar vídeo ${item.url}", e)
+                    Log.e("VideoDownloadManager", "❌ Erro ao pré-cachar mídia $mediaUrl", e)
                 }
             }
         }

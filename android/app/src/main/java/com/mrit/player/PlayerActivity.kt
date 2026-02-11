@@ -67,6 +67,9 @@ class PlayerActivity : AppCompatActivity() {
     private var currentCodigo: String? = null
     private var currentCodigoConteudo: String? = null
     private var currentPromotion: PromotionData? = null
+    private var pendingPlaylist: List<PlaylistItem>? = null
+    private var pendingPlaylistSignature: String? = null
+    private var hideImageOnNextVideoFrame: Boolean = false
 
     private val nextRunnable = Runnable {
         nextItem()
@@ -194,7 +197,7 @@ class PlayerActivity : AppCompatActivity() {
 
             // Heartbeat periódico
             while (isActive) {
-                delay(30000) // 30s
+                delay(5000) // 5s para refletir mudanças no painel quase em tempo real.
                 val display = withContext(Dispatchers.IO) {
                     service.getDisplay(codigo)
                 }
@@ -266,6 +269,8 @@ class PlayerActivity : AppCompatActivity() {
 
         currentCodigo = null
         currentCodigoConteudo = null
+        pendingPlaylist = null
+        pendingPlaylistSignature = null
         currentPromotion = null
         promoOverlay.visibility = View.GONE
     }
@@ -277,10 +282,18 @@ class PlayerActivity : AppCompatActivity() {
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build().also { player ->
             playerView.player = player
+            player.volume = 0f // Player sempre mudo.
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_ENDED && isShowingVideo) {
                         nextItem()
+                    }
+                }
+
+                override fun onRenderedFirstFrame() {
+                    if (hideImageOnNextVideoFrame) {
+                        imageView.visibility = View.GONE
+                        hideImageOnNextVideoFrame = false
                     }
                 }
             })
@@ -315,31 +328,21 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             if (itens.isEmpty()) {
-                Toast.makeText(
-                    this@PlayerActivity,
-                    "Nenhum conteúdo encontrado para esta tela.",
-                    Toast.LENGTH_LONG
-                ).show()
-                pararTudoMostrarLogin(limparCodigoSalvo = false)
+                // Aceitar o código mesmo sem conteúdo e continuar monitorando.
+                currentCodigoConteudo = codigoSelecionado
+                playlist.clear()
+                currentPlaylistSignature = null
+                playerView.visibility = View.GONE
+                imageView.visibility = View.GONE
+                iniciarWatchDePlaylist(codigoSelecionado)
                 return@launch
             }
 
-            currentCodigoConteudo = codigoSelecionado
-            playlist.clear()
-            playlist.addAll(itens)
-            currentPlaylistSignature = buildPlaylistSignature(playlist)
-            iniciarWatchDePlaylist(codigoSelecionado)
-            // Disparar pré-cache em background (não bloqueia reprodução)
-            downloadManager.preCachePlaylist(playlist)
-
-            // Marcar cache como pronto no banco (simplificado: após iniciar pré-cache)
-            currentCodigo?.let { codigo ->
-                lifecycleScope.launch(Dispatchers.IO) {
-                    val service = SupabaseDeviceService()
-                    service.atualizarStatusCache(codigo, cached = true)
-                }
-            }
-            playLoop()
+            applyPlaylistImmediately(
+                codigoConteudo = codigoSelecionado,
+                newItems = itens,
+                forceRestart = true
+            )
         }
     }
 
@@ -349,29 +352,79 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun isOnlyAdditionAtEnd(current: List<PlaylistItem>, incoming: List<PlaylistItem>): Boolean {
+        if (incoming.size <= current.size) return false
+        for (index in current.indices) {
+            if (buildPlaylistSignature(listOf(current[index])) != buildPlaylistSignature(listOf(incoming[index]))) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun applyPlaylistImmediately(
+        codigoConteudo: String,
+        newItems: List<PlaylistItem>,
+        forceRestart: Boolean
+    ) {
+        currentCodigoConteudo = codigoConteudo
+        playlist.clear()
+        playlist.addAll(newItems)
+        currentPlaylistSignature = buildPlaylistSignature(newItems)
+        pendingPlaylist = null
+        pendingPlaylistSignature = null
+        iniciarWatchDePlaylist(codigoConteudo)
+
+        // Disparar pré-cache em background (não bloqueia reprodução)
+        downloadManager.preCachePlaylist(newItems)
+
+        // Marcar cache como pronto no banco (simplificado: após iniciar pré-cache)
+        currentCodigo?.let { codigo ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                val service = SupabaseDeviceService()
+                service.atualizarStatusCache(codigo, cached = true)
+            }
+        }
+
+        if (forceRestart || currentIndex >= playlist.size) {
+            currentIndex = 0
+            playLoop()
+        }
+    }
+
     private fun iniciarWatchDePlaylist(codigoConteudo: String) {
         playlistWatchJob?.cancel()
 
         val service = PlaylistService()
         playlistWatchJob = lifecycleScope.launch {
             while (isActive) {
-                delay(30000) // 30s
                 val novosItens = withContext(Dispatchers.IO) {
                     service.carregarPlaylist(codigoConteudo)
                 }
+
                 if (novosItens.isEmpty()) {
-                    pararTudoMostrarLogin(limparCodigoSalvo = false)
-                    break
+                    delay(3000)
+                    continue
                 }
+
                 val novaAssinatura = buildPlaylistSignature(novosItens)
                 if (novaAssinatura != currentPlaylistSignature) {
-                    playlist.clear()
-                    playlist.addAll(novosItens)
-                    currentPlaylistSignature = novaAssinatura
-                    // Reiniciar loop a partir do índice atual (ou 0)
-                    currentIndex = currentIndex % playlist.size
-                    playLoop()
+                    // Sempre pré-cache da nova versão imediatamente em background.
+                    downloadManager.preCachePlaylist(novosItens)
+
+                    if (playlist.isNotEmpty() && isOnlyAdditionAtEnd(playlist, novosItens)) {
+                        pendingPlaylist = novosItens
+                        pendingPlaylistSignature = novaAssinatura
+                    } else {
+                        applyPlaylistImmediately(
+                            codigoConteudo = codigoConteudo,
+                            newItems = novosItens,
+                            forceRestart = false
+                        )
+                    }
                 }
+
+                delay(3000) // atualização rápida para refletir mudanças quase instantaneamente.
             }
         }
     }
@@ -418,8 +471,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun playVideo(item: PlaylistItem) {
         isShowingVideo = true
-        imageView.visibility = View.GONE
+        hideImageOnNextVideoFrame = imageView.visibility == View.VISIBLE
         playerView.visibility = View.VISIBLE
+        exoPlayer?.volume = 0f
 
         imageView.removeCallbacks(nextRunnable)
 
@@ -434,9 +488,8 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun showImage(item: PlaylistItem) {
         isShowingVideo = false
+        hideImageOnNextVideoFrame = false
         exoPlayer?.stop()
-        playerView.visibility = View.GONE
-        imageView.visibility = View.VISIBLE
 
         val duration = item.durationMs ?: 15000L
 
@@ -445,6 +498,17 @@ class PlayerActivity : AppCompatActivity() {
 
         imageView.load(url) {
             crossfade(true)
+            listener(
+                onSuccess = { _, _ ->
+                    imageView.visibility = View.VISIBLE
+                    playerView.visibility = View.GONE
+                },
+                onError = { _, _ ->
+                    // Em erro, ainda escondemos vídeo para evitar frame congelado com áudio.
+                    imageView.visibility = View.VISIBLE
+                    playerView.visibility = View.GONE
+                }
+            )
         }
 
         imageView.removeCallbacks(nextRunnable)
@@ -456,6 +520,19 @@ class PlayerActivity : AppCompatActivity() {
     private fun nextItem() {
         if (playlist.isEmpty()) return
         currentIndex = (currentIndex + 1) % playlist.size
+
+        // Se só adicionaram novos itens, aplicar no início do próximo ciclo.
+        if (currentIndex == 0 && pendingPlaylist != null && pendingPlaylistSignature != currentPlaylistSignature) {
+            val pending = pendingPlaylist ?: emptyList()
+            if (pending.isNotEmpty()) {
+                playlist.clear()
+                playlist.addAll(pending)
+                currentPlaylistSignature = pendingPlaylistSignature
+            }
+            pendingPlaylist = null
+            pendingPlaylistSignature = null
+        }
+
         playLoop()
     }
 
@@ -478,7 +555,6 @@ class PlayerActivity : AppCompatActivity() {
         val service = PromotionService()
         promoWatchJob = lifecycleScope.launch {
             while (isActive) {
-                delay(15000) // 15s
                 val promo = withContext(Dispatchers.IO) {
                     service.getPromotionForCodigo(codigo)
                 }
@@ -520,6 +596,8 @@ class PlayerActivity : AppCompatActivity() {
                         promoOverlay.visibility = View.GONE
                     }
                 }
+
+                delay(2000) // Verificação rápida para refletir promo quase instantaneamente.
             }
         }
     }

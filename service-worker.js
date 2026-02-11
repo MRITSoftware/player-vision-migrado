@@ -174,10 +174,25 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       const key = nsKey(req.url);
       const blob = await idbGet(key);
+      const cache = await caches.open(CACHE_NAME);
+      const fallbackCached = await cache.match(req.url);
 
       // 1) Se já temos no IDB, servimos do cache com suporte a Range (suave)
       if (blob) {
         return serveBlobWithRange(req, blob);
+      }
+
+      // 1.5) Fallback via Cache API (útil quando blob/IDB falham por CORS)
+      if (fallbackCached) {
+        if (hasRange) {
+          try {
+            const fallbackBlob = await fallbackCached.clone().blob();
+            if (fallbackBlob && fallbackBlob.size > 0) {
+              return serveBlobWithRange(req, fallbackBlob);
+            }
+          } catch {}
+        }
+        return fallbackCached;
       }
 
       // 2) Se NÃO temos cache:
@@ -190,6 +205,9 @@ self.addEventListener("fetch", (event) => {
       // 3) Caso contrário (vídeo externo sem cache), rede com timeout
       try {
         const resp = await netFetch(req, undefined, 3500);
+        if (resp && (resp.ok || resp.type === "opaque")) {
+          cache.put(req.url, resp.clone()).catch(() => {});
+        }
         return resp;
       } catch {
         return new Response("Offline", { status: 503 });
@@ -468,15 +486,16 @@ async function updateCacheForCurrentNS(playlist) {
     return keepUrls.has(url) ? null : idbDel(ks);
   }));
 
-  // 1.5) Limpa imagens do Cache API que não pertencem a este playlist
+  // 1.5) Limpa imagens e fallback de vídeos do Cache API que não pertencem a este playlist
   const cache = await caches.open(CACHE_NAME);
   const cacheKeys = await cache.keys();
   await Promise.all(cacheKeys.map(async (req) => {
     const url = req.url;
     const isImage = /\.(jpg|jpeg|png|webp)(\?|$)/i.test(url);
-    if (isImage && !keepUrls.has(url)) {
+    const isVideo = /\.(mp4|webm|mkv|mov|avi)(\?|$)/i.test(url);
+    if ((isImage || isVideo) && !keepUrls.has(url)) {
       await cache.delete(req);
-      dlog("imagem removida do cache (não está na nova playlist):", url);
+      dlog("asset removido do cache (não está na nova playlist):", url);
     }
   }));
 
@@ -533,15 +552,25 @@ async function updateCacheForCurrentNS(playlist) {
           // Usar timeout muito maior para internet lenta (120s = 2 minutos)
           // Isso evita que trave quando a internet está lenta
           try {
-            const headResp = await netFetch(url, { method: "GET", cache: "no-store" }, 120000);
-            if (!headResp.ok) {
-              dlog("falha ao baixar vídeo:", url, "status:", headResp.status);
+            const videoResp = await netFetch(url, { method: "GET", cache: "no-store" }, 120000);
+            if (!videoResp || (!videoResp.ok && videoResp.type !== "opaque")) {
+              dlog("falha ao baixar vídeo:", url, "status:", videoResp?.status);
               continue;
             }
 
-            const blob = await headResp.blob();
+            // Resposta opaque: não dá para materializar blob confiável no SW.
+            // Guarda no Cache API como fallback offline.
+            if (videoResp.type === "opaque") {
+              await cache.put(url, videoResp.clone());
+              dlog("vídeo salvo em fallback opaque no Cache API:", url);
+              cachedCount++;
+              continue;
+            }
+
+            const blob = await videoResp.blob();
             if (!blob || blob.size === 0) {
-              dlog("blob vazio ou inválido:", url);
+              await cache.put(url, videoResp.clone());
+              dlog("blob vazio, mantendo fallback no Cache API:", url);
               continue;
             }
 
@@ -552,6 +581,9 @@ async function updateCacheForCurrentNS(playlist) {
 
             dlog("vídeo em cache:", url, "tamanho:", blob.size, "MB:", (blob.size / 1024 / 1024).toFixed(2));
             await idbSet(nsKey(url), blob);
+            await cache.put(url, new Response(blob, {
+              headers: { "Content-Type": guessContentType(new URL(url).pathname) }
+            }));
             cachedCount++;
           } catch (err) {
             // Não travar se falhar - apenas logar e continuar

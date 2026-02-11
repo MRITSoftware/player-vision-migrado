@@ -133,6 +133,11 @@ function isSupabaseStorageURL(urlObj) {
   return host.includes("base.muraltv.com.br") && path.startsWith("/storage/v1/object/");
 }
 
+function extractPlaylistUrls(item) {
+  const values = [item?.url, item?.urlPortrait, item?.urlLandscape];
+  return [...new Set(values.filter((u) => typeof u === "string" && u.trim().length > 0))];
+}
+
 // ===== Fetch Handler =====
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
@@ -454,7 +459,7 @@ async function updateCacheForCurrentNS(playlist) {
 
   // 1) Limpa vídeos do IDB que não pertencem a este playlist (dentro do NS)
   const keys = await idbAllKeys();
-  const keepUrls = new Set(playlist.map(i => i.url));
+  const keepUrls = new Set(playlist.flatMap((i) => extractPlaylistUrls(i)));
   const prefix = `${CURRENT_NS}::`;
   await Promise.all(keys.map(k => {
     const ks = String(k);
@@ -479,85 +484,84 @@ async function updateCacheForCurrentNS(playlist) {
   let cachedCount = 0;
 
   for (const item of playlist) {
-    const url = item.url;
-    const u = new URL(url);
-    const isStorage = isSupabaseStorageURL(u);
-
-    try {
-      if (/\.m3u8(\?|$)/i.test(url)) {
-        const r = await netFetch(url, { cache: "no-store" }, 5000);
-        if (r && r.ok) {
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(url, r.clone());
-          prefetchFromManifest(url, await r.clone().text()).catch(()=>{});
-        }
-        continue;
-      }
-
-      if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(url)) {
-        // Verificar se já existe no cache antes de baixar
-        const cached = await cache.match(url);
-        if (cached) {
-          dlog("imagem já em cache, pulando:", url);
+    const urls = extractPlaylistUrls(item);
+    for (const url of urls) {
+      try {
+        if (/\.m3u8(\?|$)/i.test(url)) {
+          const r = await netFetch(url, { cache: "no-store" }, 5000);
+          if (r && r.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(url, r.clone());
+            prefetchFromManifest(url, await r.clone().text()).catch(()=>{});
+          }
           continue;
         }
-        
-        const resp = await netFetch(url, { cache: "no-store" }, 5000);
-        if (resp.ok) {
-          await cache.put(url, resp.clone());
-        }
-        continue;
-      }
 
-      if (/\.(mp4|webm|mkv|mov|avi)(\?|$)/i.test(url)) {
-        if (cachedCount >= MAX_VIDEOS_PER_NS) {
-          dlog("limite de vídeos em cache atingido para NS", CURRENT_NS);
+        if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(url)) {
+          // Verificar se já existe no cache antes de baixar
+          const cached = await cache.match(url);
+          if (cached) {
+            dlog("imagem já em cache, pulando:", url);
+            continue;
+          }
+
+          const resp = await netFetch(url, { cache: "no-store" }, 5000);
+          if (resp.ok) {
+            await cache.put(url, resp.clone());
+          }
           continue;
         }
-        
-        // Verificar se já existe no cache
-        const existingBlob = await idbGet(nsKey(url));
-        if (existingBlob) {
-          dlog("vídeo já em cache, pulando:", url);
-          continue;
+
+        if (/\.(mp4|webm|mkv|mov|avi)(\?|$)/i.test(url)) {
+          if (cachedCount >= MAX_VIDEOS_PER_NS) {
+            dlog("limite de vídeos em cache atingido para NS", CURRENT_NS);
+            continue;
+          }
+
+          // Verificar se já existe no cache
+          const existingBlob = await idbGet(nsKey(url));
+          if (existingBlob) {
+            dlog("vídeo já em cache, pulando:", url);
+            continue;
+          }
+
+          // Baixar vídeo inteiro: só faz sentido se o servidor permite CORS
+          // e o arquivo não for gigantesco.
+          // IMPORTANTE: Não bloquear reprodução - fazer em background com timeout maior
+          dlog("baixando vídeo para cache (background):", url);
+
+          // Usar timeout muito maior para internet lenta (120s = 2 minutos)
+          // Isso evita que trave quando a internet está lenta
+          try {
+            const headResp = await netFetch(url, { method: "GET", cache: "no-store" }, 120000);
+            if (!headResp.ok) {
+              dlog("falha ao baixar vídeo:", url, "status:", headResp.status);
+              continue;
+            }
+
+            const blob = await headResp.blob();
+            if (!blob || blob.size === 0) {
+              dlog("blob vazio ou inválido:", url);
+              continue;
+            }
+
+            if (blob.size > MAX_VIDEO_BYTES) {
+              dlog("pulado (arquivo grande)", url, blob.size, "limite:", MAX_VIDEO_BYTES);
+              continue;
+            }
+
+            dlog("vídeo em cache:", url, "tamanho:", blob.size, "MB:", (blob.size / 1024 / 1024).toFixed(2));
+            await idbSet(nsKey(url), blob);
+            cachedCount++;
+          } catch (err) {
+            // Não travar se falhar - apenas logar e continuar
+            dlog("erro ao baixar vídeo (continuando):", url, err?.message);
+            // Continuar para próximo item sem bloquear
+          }
         }
-        
-        // Baixar vídeo inteiro: só faz sentido se o servidor permite CORS
-        // e o arquivo não for gigantesco.
-        // IMPORTANTE: Não bloquear reprodução - fazer em background com timeout maior
-        dlog("baixando vídeo para cache (background):", url);
-        
-        // Usar timeout muito maior para internet lenta (120s = 2 minutos)
-        // Isso evita que trave quando a internet está lenta
-        try {
-          const headResp = await netFetch(url, { method: "GET", cache: "no-store" }, 120000);
-          if (!headResp.ok) {
-            dlog("falha ao baixar vídeo:", url, "status:", headResp.status);
-            continue;
-          }
-          
-          const blob = await headResp.blob();
-          if (!blob || blob.size === 0) {
-            dlog("blob vazio ou inválido:", url);
-            continue;
-          }
-          
-          if (blob.size > MAX_VIDEO_BYTES) {
-            dlog("pulado (arquivo grande)", url, blob.size, "limite:", MAX_VIDEO_BYTES);
-            continue;
-          }
-          
-          dlog("vídeo em cache:", url, "tamanho:", blob.size, "MB:", (blob.size / 1024 / 1024).toFixed(2));
-          await idbSet(nsKey(url), blob);
-          cachedCount++;
-        } catch (err) {
-          // Não travar se falhar - apenas logar e continuar
-          dlog("erro ao baixar vídeo (continuando):", url, err?.message);
-          // Continuar para próximo item sem bloquear
-        }
+      } catch (err) {
+        dlog("precache falhou →", url, err?.message);
       }
-    } catch (err) {
-      dlog("precache falhou →", url, err?.message);
     }
   }
 }

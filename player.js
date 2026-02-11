@@ -441,7 +441,7 @@ async function verificarEAtualizarStatusCache() {
         totalImagens++;
         // Verificar se imagem está no cache do Service Worker
         try {
-          const cache = await caches.open("mrit-player-cache-v12");
+          const cache = await caches.open("mrit-player-cache-v13");
           const cachedResponse = await cache.match(url);
           
           if (cachedResponse && cachedResponse.ok) {
@@ -1392,8 +1392,8 @@ async function iniciar() {
     }
   }
 
-  // Reset agressivo ao trocar de código (garante que nada da sessão anterior vaze)
-  await resetAllCachesForNewCode();
+  // Não limpar cache aqui: neste ponto o namespace já foi ajustado para o código atual.
+  // Limpeza agressiva acontece apenas nos fluxos explícitos de troca de código.
 
   if (!navigator.onLine) {
     const cache = localStorage.getItem(cacheKeyFor(codigo));
@@ -4529,7 +4529,7 @@ window.mritDebug = {
       return;
     }
     try {
-      const cache = await caches.open("mrit-player-cache-v12");
+      const cache = await caches.open("mrit-player-cache-v13");
       const cachedResponse = await cache.match(url);
       if (cachedResponse && cachedResponse.ok) {
         console.log("✅ Imagem encontrada no cache:", url);
@@ -4732,7 +4732,7 @@ window.mritDebug = {
       while (!success && retryCount <= maxRetries) {
         try {
           // Verificar se já está em cache
-          const cache = await caches.open("mrit-player-cache-v12");
+          const cache = await caches.open("mrit-player-cache-v13");
           const cachedResponse = await cache.match(url);
           
           if (cachedResponse && cachedResponse.ok) {

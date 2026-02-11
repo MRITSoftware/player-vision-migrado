@@ -2257,7 +2257,7 @@ async function tocarLoop() {
 
         // Verificar se o vídeo está no cache (tanto online quanto offline)
         try {
-          const cacheKey = `${codigoAtual}::${itemUrl}`;
+          const cacheKey = `${codigoAtual}::${normalizarUrlCacheVideo(itemUrl)}`;
           const cachedBlob = await idbGet(cacheKey);
           
           if (cachedBlob) {

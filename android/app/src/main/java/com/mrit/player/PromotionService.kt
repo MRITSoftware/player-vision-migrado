@@ -6,6 +6,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 
 /**
  * Serviço responsável por ler e atualizar promoções no Supabase,
@@ -32,7 +33,7 @@ class PromotionService(
         val display = httpClient.newCall(displayReq).execute().use { resp ->
             if (!resp.isSuccessful) return null
             val body = resp.body?.string() ?: return null
-            JSONObject(body)
+            parseFirstObject(body) ?: return null
         }
 
         val promoAtiva = display.optBoolean("promo", false)
@@ -56,7 +57,7 @@ class PromotionService(
         return httpClient.newCall(promoReq).execute().use { resp ->
             if (!resp.isSuccessful) return@use null
             val body = resp.body?.string() ?: return@use null
-            val obj = JSONObject(body)
+            val obj = parseFirstObject(body) ?: return@use null
 
             PromotionData(
                 idPromo = obj.opt("id_promo")?.toString() ?: idPromo,
@@ -86,7 +87,7 @@ class PromotionService(
         return httpClient.newCall(promoReq).execute().use { resp ->
             if (!resp.isSuccessful) return@use null
             val body = resp.body?.string() ?: return@use null
-            val obj = JSONObject(body)
+            val obj = parseFirstObject(body) ?: return@use null
 
             PromotionData(
                 idPromo = idPromo,
@@ -130,6 +131,20 @@ class PromotionService(
                     .build()
                 httpClient.newCall(req).execute().use { }
             }
+        }
+    }
+
+    /**
+     * O PostgREST pode retornar objeto ({}) ou lista ([{}]) dependendo do endpoint/opções.
+     * Aqui aceitamos ambos os formatos e sempre extraímos o primeiro objeto válido.
+     */
+    private fun parseFirstObject(body: String): JSONObject? {
+        return when (val parsed = JSONTokener(body).nextValue()) {
+            is JSONObject -> parsed
+            is JSONArray -> {
+                if (parsed.length() == 0) null else parsed.optJSONObject(0)
+            }
+            else -> null
         }
     }
 }

@@ -27,7 +27,17 @@ const MAX_VIDEOS_PER_NS = 50;       // até 50 vídeos por tela (aumentado para 
 const MAX_VIDEO_BYTES = 5 * 1024 * 1024 * 1024; // 5GB por vídeo (aumentado para suportar vídeos maiores)
 
 function dlog(...args) { if (DEBUG_LOG) console.log("[SW]", ...args); }
-const nsKey = (url) => `${CURRENT_NS}::${url}`;
+function normalizeMediaCacheUrl(rawUrl) {
+  try {
+    const urlObj = new URL(rawUrl);
+    // URLs assinadas do Supabase costumam trocar querystring; usa chave estável.
+    if (isSupabaseStorageURL(urlObj)) return `${urlObj.origin}${urlObj.pathname}`;
+    return urlObj.href;
+  } catch {
+    return String(rawUrl || "");
+  }
+}
+const nsKey = (url) => `${CURRENT_NS}::${normalizeMediaCacheUrl(url)}`;
 
 // ===== IndexedDB Helpers =====
 function idbOpen() {
@@ -477,7 +487,9 @@ async function updateCacheForCurrentNS(playlist) {
 
   // 1) Limpa vídeos do IDB que não pertencem a este playlist (dentro do NS)
   const keys = await idbAllKeys();
-  const keepUrls = new Set(playlist.flatMap((i) => extractPlaylistUrls(i)));
+  const keepUrls = new Set(
+    playlist.flatMap((i) => extractPlaylistUrls(i)).map((u) => normalizeMediaCacheUrl(u))
+  );
   const prefix = `${CURRENT_NS}::`;
   await Promise.all(keys.map(k => {
     const ks = String(k);

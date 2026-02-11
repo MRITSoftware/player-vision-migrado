@@ -380,6 +380,17 @@ function cacheKeyFor(codigo) {
   return `playlist_cache_${codigo}`;
 }
 
+function normalizarUrlCacheVideo(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    const isStorage = u.hostname.includes("base.muraltv.com.br") && u.pathname.startsWith("/storage/v1/object/");
+    // Evita cache miss quando URL assinada muda apenas no token/query.
+    return isStorage ? `${u.origin}${u.pathname}` : u.href;
+  } catch {
+    return String(rawUrl || "");
+  }
+}
+
 async function postMessageToServiceWorker(message, waitForReady = true) {
   if (!('serviceWorker' in navigator)) return false;
 
@@ -457,7 +468,7 @@ async function verificarEAtualizarStatusCache(skipForcarCache = false) {
       
       if (isVideo) {
         totalVideos++;
-        const cacheKey = `${codigoAtual}::${url}`;
+        const cacheKey = `${codigoAtual}::${normalizarUrlCacheVideo(url)}`;
         const cachedBlob = await idbGet(cacheKey);
         
         if (cachedBlob && cachedBlob.size > 0) {
@@ -4548,7 +4559,7 @@ window.mritDebug = {
       console.log("❌ URL não fornecida");
       return;
     }
-    const cacheKey = `${codigoAtual}::${url}`;
+    const cacheKey = `${codigoAtual}::${normalizarUrlCacheVideo(url)}`;
     try {
       const blob = await idbGet(cacheKey);
       if (blob) {
@@ -4668,7 +4679,7 @@ window.mritDebug = {
       while (!success && retryCount <= maxRetries) {
         try {
           // Verificar se já está em cache
-          const cacheKey = `${codigoAtual}::${url}`;
+          const cacheKey = `${codigoAtual}::${normalizarUrlCacheVideo(url)}`;
           const existingBlob = await idbGet(cacheKey);
           
           if (existingBlob && existingBlob.size > 0) {

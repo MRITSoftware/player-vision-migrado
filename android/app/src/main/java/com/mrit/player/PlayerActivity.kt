@@ -205,13 +205,18 @@ class PlayerActivity : AppCompatActivity() {
                     service.getDisplay(codigo)
                 }
 
+                // Sem rede/erro momentâneo: manter exibição atual e não forçar fallback de conteúdo.
+                if (display == null) {
+                    continue
+                }
+
                 // Se destravou no painel (is_locked=false), parar player e voltar à tela de código.
-                if (display?.isLocked == false) {
+                if (display.isLocked == false) {
                     pararTudoMostrarLogin(limparCodigoSalvo = true)
                     break
                 }
 
-                val novoCodigoConteudo = display?.codigoConteudoAtual?.trim().takeUnless { it.isNullOrBlank() } ?: codigo
+                val novoCodigoConteudo = display.codigoConteudoAtual?.trim().takeUnless { it.isNullOrBlank() } ?: codigo
                 if (!novoCodigoConteudo.isNullOrBlank() && novoCodigoConteudo != currentCodigoConteudo) {
                     currentCodigoConteudo = novoCodigoConteudo
                     carregarPlaylistDoBackend(novoCodigoConteudo, codigo)
@@ -333,10 +338,14 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             if (itens.isEmpty()) {
-                // Aceitar o código mesmo sem conteúdo e continuar monitorando.
+                // Se já existe algo tocando, manter exibição atual mesmo offline.
+                if (playlist.isNotEmpty()) {
+                    iniciarWatchDePlaylist(codigoSelecionado)
+                    return@launch
+                }
+
+                // Primeiro carregamento sem conteúdo: manter em modo aguardando.
                 currentCodigoConteudo = codigoSelecionado
-                playlist.clear()
-                currentPlaylistSignature = null
                 playerView.visibility = View.GONE
                 imageView.visibility = View.GONE
                 iniciarWatchDePlaylist(codigoSelecionado)
@@ -475,13 +484,6 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun playVideo(item: PlaylistItem) {
-        isShowingVideo = true
-        imageView.visibility = View.GONE
-        playerView.visibility = View.VISIBLE
-        exoPlayer?.volume = 0f
-
-        imageView.removeCallbacks(nextRunnable)
-
         val url = pickUrlForOrientation(item)
         applyFitForVideo(item)
         val cachedFile = ImageFileCache.getCachedFile(this, url)
@@ -496,6 +498,13 @@ class PlayerActivity : AppCompatActivity() {
             nextItem()
             return
         }
+
+        isShowingVideo = true
+        imageView.visibility = View.GONE
+        playerView.visibility = View.VISIBLE
+        exoPlayer?.volume = 0f
+
+        imageView.removeCallbacks(nextRunnable)
 
         val mediaItem = MediaItem.fromUri(playUri)
         exoPlayer?.setMediaItem(mediaItem)

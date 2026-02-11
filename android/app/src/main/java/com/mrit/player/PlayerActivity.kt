@@ -72,6 +72,9 @@ class PlayerActivity : AppCompatActivity() {
     private var currentPromotion: PromotionData? = null
     private var pendingPlaylist: List<PlaylistItem>? = null
     private var pendingPlaylistSignature: String? = null
+    private var currentVideoRemoteUrl: String? = null
+    private var wasPlayingFromLocalFile: Boolean = false
+    private var hasRetriedCurrentVideoFromNetwork: Boolean = false
 
     private val nextRunnable = Runnable {
         nextItem()
@@ -299,8 +302,22 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
-                    // Em falha (comum offline sem cache), segue para o próximo item
-                    // para evitar tela preta/travamento da exibição.
+                    // Se falhou um arquivo local e há internet, tenta a URL remota uma vez.
+                    if (isShowingVideo &&
+                        wasPlayingFromLocalFile &&
+                        !hasRetriedCurrentVideoFromNetwork &&
+                        isOnline() &&
+                        !currentVideoRemoteUrl.isNullOrBlank()
+                    ) {
+                        hasRetriedCurrentVideoFromNetwork = true
+                        val mediaItem = MediaItem.fromUri(currentVideoRemoteUrl!!)
+                        exoPlayer?.setMediaItem(mediaItem)
+                        exoPlayer?.prepare()
+                        exoPlayer?.playWhenReady = true
+                        return
+                    }
+
+                    // Em outras falhas, segue para o próximo item para evitar tela preta/travamento.
                     imageView.removeCallbacks(nextRunnable)
                     if (playlist.size > 1) {
                         nextItem()
@@ -487,14 +504,15 @@ class PlayerActivity : AppCompatActivity() {
         val url = pickUrlForOrientation(item)
         applyFitForVideo(item)
         val cachedFile = ImageFileCache.getCachedFile(this, url)
-        val playUri = if (cachedFile != null) {
-            android.net.Uri.fromFile(cachedFile).toString()
+        val online = isOnline()
+        val playUri = if (!online && cachedFile != null) {
+            android.net.Uri.fromFile(cachedFile)
         } else {
-            url
+            android.net.Uri.parse(url)
         }
 
         // Se estiver offline e for mídia de arquivo sem cache local, pular item para não travar em preto.
-        if (!isOnline() && cachedFile == null && isDirectFileMediaUrl(url) && playlist.size > 1) {
+        if (!online && cachedFile == null && isDirectFileMediaUrl(url) && playlist.size > 1) {
             nextItem()
             return
         }
@@ -505,6 +523,9 @@ class PlayerActivity : AppCompatActivity() {
         exoPlayer?.volume = 0f
 
         imageView.removeCallbacks(nextRunnable)
+        currentVideoRemoteUrl = url
+        wasPlayingFromLocalFile = !online && cachedFile != null
+        hasRetriedCurrentVideoFromNetwork = false
 
         val mediaItem = MediaItem.fromUri(playUri)
         exoPlayer?.setMediaItem(mediaItem)

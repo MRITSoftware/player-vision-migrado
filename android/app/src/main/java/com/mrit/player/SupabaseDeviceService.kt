@@ -14,7 +14,9 @@ data class ActiveDevice(
 data class DisplayInfo(
     val codigoUnico: String,
     val isLocked: Boolean?,
-    val codigoConteudoAtual: String?
+    val codigoConteudoAtual: String?,
+    val deviceId: String?,
+    val deviceLastSeen: String?
 )
 
 /**
@@ -32,7 +34,7 @@ class SupabaseDeviceService(
         if (codigo.isBlank()) return null
 
         val url =
-            "$baseUrl/displays?codigo_unico=eq.$codigo&select=codigo_unico,is_locked,codigo_conteudoAtual&limit=1"
+            "$baseUrl/displays?codigo_unico=eq.$codigo&select=codigo_unico,is_locked,codigo_conteudoAtual,device_id,device_last_seen&limit=1"
 
         val request = Request.Builder()
             .url(url)
@@ -53,7 +55,13 @@ class SupabaseDeviceService(
             val codigoConteudoAtual = if (obj.has("codigo_conteudoAtual") && !obj.isNull("codigo_conteudoAtual")) {
                 obj.optString("codigo_conteudoAtual", null)
             } else null
-            return DisplayInfo(codigoUnico, isLocked, codigoConteudoAtual)
+            val deviceId = if (obj.has("device_id") && !obj.isNull("device_id")) {
+                obj.optString("device_id", null)
+            } else null
+            val deviceLastSeen = if (obj.has("device_last_seen") && !obj.isNull("device_last_seen")) {
+                obj.optString("device_last_seen", null)
+            } else null
+            return DisplayInfo(codigoUnico, isLocked, codigoConteudoAtual, deviceId, deviceLastSeen)
         }
     }
 

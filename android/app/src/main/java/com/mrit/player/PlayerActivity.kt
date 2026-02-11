@@ -32,6 +32,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Duration
+import java.time.Instant
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -140,6 +142,7 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val deviceId = DeviceIdProvider.getDeviceId(ctx)
             val deviceService = SupabaseDeviceService()
+            var codigoConteudoInicial: String? = null
 
             val resultado = withContext(Dispatchers.IO) {
                 // 1) Verificar se o display existe
@@ -148,13 +151,14 @@ class PlayerActivity : AppCompatActivity() {
                     return@withContext "Código inválido ou não encontrado"
                 }
 
-                // 2) Verificar se já há dispositivo ativo usando esse código
-                val active = deviceService.getActiveDeviceForCodigo(codigo)
-                if (active != null && !active.deviceId.isNullOrBlank() && active.deviceId != deviceId) {
-                    val localNome = active.localNome ?: "outro local"
-                    return@withContext "Código já está em uso em: $localNome"
+                // 2) Bloquear apenas se realmente está locked por outro device ainda ativo.
+                val mesmoDispositivo = !display.deviceId.isNullOrBlank() && display.deviceId == deviceId
+                val lockStale = isDisplayLockStale(display.deviceLastSeen)
+                if (display.isLocked == true && !mesmoDispositivo && !lockStale) {
+                    return@withContext "Código já está em uso em outro dispositivo"
                 }
 
+                codigoConteudoInicial = display.codigoConteudoAtual?.trim().takeUnless { it.isNullOrBlank() } ?: codigo
                 // Se chegou aqui, consideramos válido para este dispositivo
                 null
             }
@@ -167,27 +171,11 @@ class PlayerActivity : AppCompatActivity() {
                 currentCodigo = codigo
                 aplicarEstadoComCodigo(codigo)
 
-                val codigoConteudo = withContext(Dispatchers.IO) {
-                    deviceService.getDisplay(codigo)?.codigoConteudoAtual?.trim()
-                }
-
-                if (codigoConteudo.isNullOrBlank()) {
-                    // Sem conteúdo configurado para este display: evitar "tela preta".
-                    Toast.makeText(
-                        ctx,
-                        "Esta tela ainda não tem conteúdo configurado.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    pararTudoMostrarLogin(limparCodigoSalvo = false)
-                    return@launch
-                }
-
-                currentCodigoConteudo = codigoConteudo
                 // Marcar display em uso e iniciar heartbeat
                 iniciarHeartbeat(codigo)
                 iniciarWatchDePromocao(codigo)
                 iniciarWatchDeComandos()
-                carregarPlaylistDoBackend(codigoConteudo)
+                carregarPlaylistDoBackend(codigoConteudoInicial ?: codigo, codigo)
             }
         }
     }
@@ -212,15 +200,15 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 // Se destravou no painel (is_locked=false), parar player e voltar à tela de código.
-                if (display == null || display.isLocked == false) {
+                if (display?.isLocked == false) {
                     pararTudoMostrarLogin(limparCodigoSalvo = true)
                     break
                 }
 
-                val novoCodigoConteudo = display.codigoConteudoAtual?.trim()
+                val novoCodigoConteudo = display?.codigoConteudoAtual?.trim().takeUnless { it.isNullOrBlank() } ?: codigo
                 if (!novoCodigoConteudo.isNullOrBlank() && novoCodigoConteudo != currentCodigoConteudo) {
                     currentCodigoConteudo = novoCodigoConteudo
-                    carregarPlaylistDoBackend(novoCodigoConteudo)
+                    carregarPlaylistDoBackend(novoCodigoConteudo, codigo)
                 }
 
                 withContext(Dispatchers.IO) {
@@ -308,23 +296,39 @@ class PlayerActivity : AppCompatActivity() {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
     }
 
-    private fun carregarPlaylistDoBackend(codigoConteudo: String) {
+    private fun carregarPlaylistDoBackend(codigoConteudo: String, fallbackCodigo: String? = null) {
         val service = PlaylistService()
         lifecycleScope.launch {
-            val itens = withContext(Dispatchers.IO) {
+            var codigoSelecionado = codigoConteudo
+            var itens = withContext(Dispatchers.IO) {
                 service.carregarPlaylist(codigoConteudo)
             }
 
+            val fallback = fallbackCodigo?.trim()
+            if (itens.isEmpty() && !fallback.isNullOrBlank() && fallback != codigoConteudo) {
+                itens = withContext(Dispatchers.IO) {
+                    service.carregarPlaylist(fallback)
+                }
+                if (itens.isNotEmpty()) {
+                    codigoSelecionado = fallback
+                }
+            }
+
             if (itens.isEmpty()) {
-                // Sem itens -> manter UI de código, evitando ficar em preto sem feedback.
+                Toast.makeText(
+                    this@PlayerActivity,
+                    "Nenhum conteúdo encontrado para esta tela.",
+                    Toast.LENGTH_LONG
+                ).show()
                 pararTudoMostrarLogin(limparCodigoSalvo = false)
                 return@launch
             }
 
+            currentCodigoConteudo = codigoSelecionado
             playlist.clear()
             playlist.addAll(itens)
             currentPlaylistSignature = buildPlaylistSignature(playlist)
-            iniciarWatchDePlaylist(codigoConteudo)
+            iniciarWatchDePlaylist(codigoSelecionado)
             // Disparar pré-cache em background (não bloqueia reprodução)
             downloadManager.preCachePlaylist(playlist)
 
@@ -444,7 +448,9 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         imageView.removeCallbacks(nextRunnable)
-        imageView.postDelayed(nextRunnable, duration)
+        if (duration > 0L) {
+            imageView.postDelayed(nextRunnable, duration)
+        }
     }
 
     private fun nextItem() {
@@ -638,6 +644,16 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         aplicarEstadoSemCodigo()
+    }
+
+    private fun isDisplayLockStale(deviceLastSeen: String?): Boolean {
+        if (deviceLastSeen.isNullOrBlank()) return false
+        return try {
+            val lastSeen = Instant.parse(deviceLastSeen)
+            Duration.between(lastSeen, Instant.now()).seconds > 120
+        } catch (_: Exception) {
+            false
+        }
     }
 }
 

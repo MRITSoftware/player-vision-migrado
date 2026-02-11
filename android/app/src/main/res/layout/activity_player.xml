@@ -123,7 +123,7 @@
         android:id="@+id/promoOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#CC000000"
+        android:background="#A6000000"
         android:visibility="gone"
         android:clickable="true"
         android:focusable="true">
@@ -133,58 +133,129 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:layout_margin="24dp"
+            android:layout_margin="16dp"
             android:orientation="vertical"
-            android:padding="24dp"
-            android:background="@android:color/white"
-            android:elevation="8dp">
+            android:background="@drawable/bg_promo_card"
+            android:elevation="12dp">
 
-            <ImageView
-                android:id="@+id/promoImage"
-                android:layout_width="match_parent"
-                android:layout_height="160dp"
-                android:scaleType="fitCenter"
-                android:adjustViewBounds="true"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/promoText"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:textColor="@android:color/black"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:textAlignment="center" />
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:paddingVertical="16dp"
+                android:paddingHorizontal="12dp"
+                android:background="@drawable/bg_promo_header">
 
-            <TextView
-                android:id="@+id/promoOriginalPrice"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⚡ OFERTA RELÂMPAGO"
+                    android:textColor="@android:color/white"
+                    android:textSize="32sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.02" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:textColor="#EF4444"
-                android:textSize="16sp"
-                android:textAlignment="center" />
+                android:orientation="vertical"
+                android:background="#F3F4F6"
+                android:paddingHorizontal="20dp"
+                android:paddingTop="20dp"
+                android:paddingBottom="16dp">
 
-            <TextView
-                android:id="@+id/promoPrice"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textColor="#DC2626"
-                android:textSize="32sp"
-                android:textStyle="bold"
-                android:textAlignment="center" />
+                <ImageView
+                    android:id="@+id/promoImage"
+                    android:layout_width="130dp"
+                    android:layout_height="130dp"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_promo_image"
+                    android:padding="2dp"
+                    android:scaleType="centerCrop"
+                    android:visibility="gone" />
 
-            <TextView
-                android:id="@+id/promoCounter"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:textColor="@android:color/black"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textAlignment="center" />
+                <TextView
+                    android:id="@+id/promoText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:textColor="#3F4561"
+                    android:textSize="46sp"
+                    android:textStyle="bold"
+                    android:textAlignment="center" />
+
+                <TextView
+                    android:id="@+id/promoOriginalPrice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="#EF4444"
+                    android:textSize="35sp"
+                    android:textStyle="bold"
+                    android:textAlignment="center" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="POR APENAS"
+                    android:textColor="#111827"
+                    android:textSize="30sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08"
+                    android:textAlignment="center" />
+
+                <TextView
+                    android:id="@+id/promoPrice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="#EF4444"
+                    android:textSize="68sp"
+                    android:textStyle="bold"
+                    android:textAlignment="center" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:layout_marginTop="20dp"
+                    android:background="#E5B93E" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:background="@drawable/bg_promo_counter"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:paddingVertical="18dp"
+                    android:paddingHorizontal="8dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="ÚLTIMAS UNIDADES"
+                        android:textColor="@android:color/white"
+                        android:textSize="30sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.04"
+                        android:textAlignment="center" />
+
+                    <TextView
+                        android:id="@+id/promoCounter"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textColor="@android:color/white"
+                        android:textSize="72sp"
+                        android:textStyle="bold"
+                        android:textAlignment="center" />
+
+                </LinearLayout>
+            </LinearLayout>
 
         </LinearLayout>
     </FrameLayout>

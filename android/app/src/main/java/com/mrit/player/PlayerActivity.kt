@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
+import java.util.Calendar
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -69,7 +70,6 @@ class PlayerActivity : AppCompatActivity() {
     private var currentPromotion: PromotionData? = null
     private var pendingPlaylist: List<PlaylistItem>? = null
     private var pendingPlaylistSignature: String? = null
-    private var hideImageOnNextVideoFrame: Boolean = false
 
     private val nextRunnable = Runnable {
         nextItem()
@@ -96,6 +96,7 @@ class PlayerActivity : AppCompatActivity() {
         promoOriginalPrice = findViewById(R.id.promoOriginalPrice)
         promoPrice = findViewById(R.id.promoPrice)
         promoCounterView = findViewById(R.id.promoCounter)
+        atualizarRodapeAnoAtual()
 
         initPlayer()
         downloadManager = VideoDownloadManager(this)
@@ -197,7 +198,7 @@ class PlayerActivity : AppCompatActivity() {
 
             // Heartbeat periódico
             while (isActive) {
-                delay(5000) // 5s para refletir mudanças no painel quase em tempo real.
+                delay(2000) // 2s para refletir mudanças no painel rapidamente.
                 val display = withContext(Dispatchers.IO) {
                     service.getDisplay(codigo)
                 }
@@ -239,8 +240,7 @@ class PlayerActivity : AppCompatActivity() {
         playerView.visibility = View.GONE
         imageView.visibility = View.GONE
 
-        // Atualizar texto de rodapé se quiser (ex: mostrar o código/local)
-        rodapeTexto.text = "Código: $codigo"
+        atualizarRodapeAnoAtual()
     }
 
     private fun aplicarEstadoSemCodigo() {
@@ -249,6 +249,7 @@ class PlayerActivity : AppCompatActivity() {
         codigoInputContainer.visibility = View.VISIBLE
         rodapeContainer.visibility = View.VISIBLE
         logoContainer.visibility = View.VISIBLE
+        atualizarRodapeAnoAtual()
 
         // Esconder player até ter código
         playerView.visibility = View.GONE
@@ -287,13 +288,6 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_ENDED && isShowingVideo) {
                         nextItem()
-                    }
-                }
-
-                override fun onRenderedFirstFrame() {
-                    if (hideImageOnNextVideoFrame) {
-                        imageView.visibility = View.GONE
-                        hideImageOnNextVideoFrame = false
                     }
                 }
             })
@@ -343,6 +337,7 @@ class PlayerActivity : AppCompatActivity() {
                 newItems = itens,
                 forceRestart = true
             )
+            iniciarWatchDePlaylist(codigoSelecionado)
         }
     }
 
@@ -373,7 +368,6 @@ class PlayerActivity : AppCompatActivity() {
         currentPlaylistSignature = buildPlaylistSignature(newItems)
         pendingPlaylist = null
         pendingPlaylistSignature = null
-        iniciarWatchDePlaylist(codigoConteudo)
 
         // Disparar pré-cache em background (não bloqueia reprodução)
         downloadManager.preCachePlaylist(newItems)
@@ -403,7 +397,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 if (novosItens.isEmpty()) {
-                    delay(3000)
+                    delay(1000)
                     continue
                 }
 
@@ -424,7 +418,7 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
 
-                delay(3000) // atualização rápida para refletir mudanças quase instantaneamente.
+                delay(1000) // atualização muito rápida para refletir mudanças quase instantaneamente.
             }
         }
     }
@@ -471,7 +465,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun playVideo(item: PlaylistItem) {
         isShowingVideo = true
-        hideImageOnNextVideoFrame = imageView.visibility == View.VISIBLE
+        imageView.visibility = View.GONE
         playerView.visibility = View.VISIBLE
         exoPlayer?.volume = 0f
 
@@ -488,27 +482,20 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun showImage(item: PlaylistItem) {
         isShowingVideo = false
-        hideImageOnNextVideoFrame = false
         exoPlayer?.stop()
+        exoPlayer?.clearMediaItems()
 
-        val duration = item.durationMs ?: 15000L
+        val configuredDuration = item.durationMs ?: 15000L
+        val duration = if (configuredDuration <= 0L && playlist.size > 1) 15000L else configuredDuration
 
         val url = pickUrlForOrientation(item)
         applyFitForImage(item)
 
+        // Mostrar a camada de imagem imediatamente evita "piscar preto".
+        imageView.visibility = View.VISIBLE
+        playerView.visibility = View.GONE
         imageView.load(url) {
-            crossfade(true)
-            listener(
-                onSuccess = { _, _ ->
-                    imageView.visibility = View.VISIBLE
-                    playerView.visibility = View.GONE
-                },
-                onError = { _, _ ->
-                    // Em erro, ainda escondemos vídeo para evitar frame congelado com áudio.
-                    imageView.visibility = View.VISIBLE
-                    playerView.visibility = View.GONE
-                }
-            )
+            crossfade(false)
         }
 
         imageView.removeCallbacks(nextRunnable)
@@ -597,7 +584,7 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 }
 
-                delay(2000) // Verificação rápida para refletir promo quase instantaneamente.
+                delay(1000) // Verificação muito rápida para refletir promo quase instantaneamente.
             }
         }
     }
@@ -622,9 +609,17 @@ class PlayerActivity : AppCompatActivity() {
         promoText.text = promo.texto ?: "Promoção especial"
 
         // Preços (formatar em pt-BR semelhante ao JS)
-        promoOriginalPrice.text = formatarValorMonetario(promo.valorAntes)
-        promoOriginalPrice.paintFlags = promoOriginalPrice.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
-        promoPrice.text = formatarValorMonetario(promo.valorPromo)
+        val valorAntesFormatado = formatarValorMonetario(promo.valorAntes)
+        if (valorAntesFormatado.isBlank()) {
+            promoOriginalPrice.visibility = View.GONE
+        } else {
+            promoOriginalPrice.visibility = View.VISIBLE
+            promoOriginalPrice.text = valorAntesFormatado
+            promoOriginalPrice.paintFlags = promoOriginalPrice.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+        }
+
+        val valorPromoFormatado = formatarValorMonetario(promo.valorPromo)
+        promoPrice.text = if (valorPromoFormatado.isBlank()) "R$ 0,00" else valorPromoFormatado
 
         // Contador
         promoCounterView.text = promo.contador.toString()
@@ -732,6 +727,11 @@ class PlayerActivity : AppCompatActivity() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun atualizarRodapeAnoAtual() {
+        val year = Calendar.getInstance().get(Calendar.YEAR)
+        rodapeTexto.text = "\u00A9 $year MRIT"
     }
 }
 
